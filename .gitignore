@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# Local data / databases (tool state, not source)
+*.db
+*.sqlite
+*.sqlite3
+headroom_memory.db
+
+# Environment / secrets
+.env
+.env.*
+*.local
+
+# Editor / OS cruft
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Runtime
+*.pid
+
+# Recorded history (time-series data)
+data/
+*.jsonl

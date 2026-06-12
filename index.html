@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Token Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ---- dark theme (default) ---- */
+    :root, :root[data-theme="dark"] {
+      --bg: #0d1117;
+      --card: #161b22;
+      --card-2: rgba(255,255,255,0.03);
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --rtk: #58a6ff;
+      --caveman: #d4a72c;
+      --headroom: #3fb950;
+      --danger: #f85149;
+      --warn: #d29922;
+      --grid: #21262d;
+      --on-accent: #0d1117;
+      --shadow: none;
+      --hero-grad: linear-gradient(135deg, #161b22 0%, #1a2230 100%);
+    }
+    /* ---- light theme ---- */
+    :root[data-theme="light"] {
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --card-2: rgba(0,0,0,0.025);
+      --border: #d8dee4;
+      --text: #1f2328;
+      --muted: #5b6470;
+      --rtk: #0969da;
+      --caveman: #9a6700;
+      --headroom: #1a7f37;
+      --danger: #cf222e;
+      --warn: #9a6700;
+      --grid: #eaeef2;
+      --on-accent: #ffffff;
+      --shadow: 0 1px 3px rgba(27,31,36,0.08), 0 1px 2px rgba(27,31,36,0.04);
+      --hero-grad: linear-gradient(135deg, #ffffff 0%, #eef4ff 100%);
+    }
+    /* ---- auto: follow OS when no explicit choice ---- */
+    @media (prefers-color-scheme: light) {
+      :root[data-theme="auto"] {
+        --bg: #f4f6f9;
+        --card: #ffffff;
+        --card-2: rgba(0,0,0,0.025);
+        --border: #d8dee4;
+        --text: #1f2328;
+        --muted: #5b6470;
+        --rtk: #0969da;
+        --caveman: #9a6700;
+        --headroom: #1a7f37;
+        --danger: #cf222e;
+        --warn: #9a6700;
+        --grid: #eaeef2;
+        --on-accent: #ffffff;
+        --shadow: 0 1px 3px rgba(27,31,36,0.08), 0 1px 2px rgba(27,31,36,0.04);
+        --hero-grad: linear-gradient(135deg, #ffffff 0%, #eef4ff 100%);
+      }
+    }
+    html { transition: background 0.25s ease; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
+      font-size: 16px;
+      min-height: 100vh;
+      padding: 28px;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      color: var(--text);
+    }
+    header h1 span { color: var(--muted); font-weight: 400; }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 15px;
+      color: var(--muted);
+    }
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background 0.4s, box-shadow 0.4s;
+    }
+    .dot.live { background: var(--headroom); box-shadow: 0 0 5px var(--headroom); }
+    .dot.error { background: var(--danger); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+    @media (max-width: 1000px) { .grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 640px)  { .grid { grid-template-columns: 1fr; } }
+
+    /* 3-column board: Headroom | RTK+Caveman | graphs */
+    .board {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr 1.25fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .board-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+    @media (max-width: 1100px) { .board { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 680px)  { .board { grid-template-columns: 1fr; } }
+    .graph-card .card-header { margin-bottom: 16px; }
+    .graph-card .hist-title:first-of-type { margin-top: 0; }
+    .graph-card .hist-canvas { height: 200px; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+    .card:hover { box-shadow: var(--shadow), 0 4px 14px rgba(0,0,0,0.12); }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .accent { width: 7px; height: 7px; border-radius: 50%; }
+
+    .big { font-size: 40px; font-weight: 700; letter-spacing: -1px; line-height: 1; }
+    .big-label { font-size: 14px; color: var(--muted); margin-top: 4px; margin-bottom: 16px; }
+
+    .rows { display: flex; flex-direction: column; gap: 0; }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 16px;
+    }
+    .row:last-child { border-bottom: none; }
+    .row-label { color: var(--muted); }
+    .row-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    .chart-wrap { margin-top: 14px; height: 110px; position: relative; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .prog-group { margin-bottom: 13px; }
+    .prog-header { display: flex; justify-content: space-between; font-size: 15px; margin-bottom: 6px; }
+    .prog-label { color: var(--muted); }
+    .prog-pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .prog-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+
+    .divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+    .token-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .tcell {
+      background: var(--card-2);
+      border-radius: 7px;
+      padding: 9px 10px;
+    }
+    .tcell-label { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+    .tcell-val { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .err { font-size: 16px; color: var(--danger); padding: 4px 0; }
+    .loading { font-size: 16px; color: var(--muted); }
+
+    /* hero combined-savings strip */
+    .hero {
+      background: var(--hero-grad);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 22px;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .hero-main { display: flex; align-items: baseline; gap: 12px; }
+    .hero-num {
+      font-size: 50px; font-weight: 800; letter-spacing: -1.5px;
+      color: var(--headroom);
+      font-variant-numeric: tabular-nums;
+    }
+    .hero-label { font-size: 15px; color: var(--muted); }
+    .hero-chips { display: flex; gap: 10px; flex-wrap: wrap; }
+    .chip {
+      display: flex; flex-direction: column;
+      padding: 8px 14px;
+      background: var(--card-2);
+      border-radius: 8px;
+      border-left: 3px solid var(--border);
+    }
+    .chip-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+    .chip-val { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 3px; }
+
+    /* refresh control */
+    .refresh-ctl { display: flex; align-items: center; gap: 8px; }
+    .countdown {
+      font-variant-numeric: tabular-nums;
+      min-width: 18px;
+      text-align: right;
+      color: var(--headroom);
+      font-weight: 600;
+    }
+    .rbtn {
+      background: var(--border); color: var(--text);
+      border: none; border-radius: 6px;
+      padding: 5px 11px; font-size: 15px; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .rbtn:hover { filter: brightness(1.25); }
+    .rbtn:active { transform: scale(0.95); }
+
+    /* theme toggle segmented control */
+    .theme-toggle {
+      display: inline-flex;
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .theme-toggle button {
+      background: transparent; border: none; cursor: pointer;
+      color: var(--muted); font-size: 15px; line-height: 1;
+      padding: 5px 9px; transition: background 0.15s, color 0.15s;
+    }
+    .theme-toggle button:hover { color: var(--text); }
+    .theme-toggle button.active { background: var(--rtk); color: var(--on-accent); }
+
+    .mdl-bar-track { height: 7px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .mdl-bar { display: block; height: 100%; border-radius: 4px; background: var(--rtk); transition: width 0.6s ease; }
+
+    .mdl-legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .mdl-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .lg-swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+    .mdl-block { margin-bottom: 12px; }
+    .mdl-block-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+    .mdl-name { color: var(--text); font-size: 14px; font-weight: 600; }
+    .mdl-figs { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .mdl-figs b { color: var(--headroom); font-weight: 700; }
+    .mdl-disc { color: var(--headroom); font-weight: 600; margin-left: 4px; }
+    .mdl-legend b { color: var(--caveman); font-weight: 700; }
+
+    .cost-totals { display: flex; gap: 8px; margin-bottom: 12px; }
+    .ct { flex: 1; background: var(--card-2); border-radius: 7px; padding: 8px 10px; text-align: center; }
+    .ct-l { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+    .ct-v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .ct-raw { color: var(--muted); }
+    .ct-real { color: var(--caveman); }
+    .ct-saved { color: var(--headroom); }
+    .mdl-costs { display: flex; gap: 14px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+    .mdl-costs b { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .info {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      background: var(--border);
+      color: var(--muted);
+      font-size: 9px; font-weight: 700;
+      cursor: help;
+      vertical-align: middle;
+    }
+    .row[title]:hover .info { background: var(--headroom); color: var(--on-accent); }
+    .footnote {
+      font-size: 11px; line-height: 1.5;
+      color: var(--muted);
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: var(--card-2);
+      border-radius: 7px;
+      border-left: 2px solid var(--border);
+    }
+    .footnote strong { color: var(--text); font-weight: 600; }
+
+    /* raw vs weighted explainer */
+    .explain {
+      margin-top: 12px;
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .explain summary {
+      cursor: pointer;
+      padding: 11px 13px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      list-style: none;
+      display: flex; align-items: center; gap: 7px;
+      user-select: none;
+    }
+    .explain summary::-webkit-details-marker { display: none; }
+    .explain summary::after { content: '▸'; margin-left: auto; color: var(--muted); transition: transform 0.2s; }
+    .explain[open] summary::after { transform: rotate(90deg); }
+    .explain-body { padding: 4px 14px 14px; font-size: 13px; line-height: 1.6; color: var(--text); }
+    .explain-body p { margin-bottom: 9px; color: var(--muted); }
+    .explain-body strong { color: var(--text); font-weight: 600; }
+    .explain-body ul { margin: 0 0 11px 18px; }
+    .explain-body li { margin-bottom: 5px; color: var(--muted); }
+    .explain-tbl { width: 100%; border-collapse: collapse; margin: 4px 0 11px; font-size: 12.5px; }
+    .explain-tbl th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+    .explain-tbl td { padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,0.04); font-variant-numeric: tabular-nums; }
+    .explain-tbl td:nth-child(2) { text-align: right; font-weight: 600; }
+    .explain-tbl td:nth-child(3) { text-align: right; color: var(--muted); }
+    .explain-tbl .tbl-sum td { font-weight: 700; color: var(--text); border-top: 1px solid var(--border); }
+    .cmp { margin: 10px 0; display: flex; flex-direction: column; gap: 7px; }
+    .cmp-row { display: flex; align-items: center; gap: 9px; }
+    .cmp-tag { flex: 0 0 64px; font-size: 12px; color: var(--muted); }
+    .cmp-track { flex: 1; height: 9px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .cmp-fill { display: block; height: 100%; border-radius: 4px; }
+    .cmp-n { flex: 0 0 56px; text-align: right; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .explain-note { font-size: 12.5px; font-style: italic; }
+
+    /* history section */
+    .history { margin-top: 22px; }
+    .hist-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .hist-head h2 { font-size: 18px; font-weight: 600; }
+    .hist-range { display: flex; gap: 6px; }
+    .rbtn.rng { background: var(--card); border: 1px solid var(--border); }
+    .rbtn.rng.active { background: var(--rtk); color: var(--on-accent); border-color: var(--rtk); font-weight: 700; }
+    .hist-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 760px) { .hist-grid { grid-template-columns: 1fr; } }
+    .hist-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); }
+    .hist-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+    .hist-title span { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
+    .hist-canvas { height: 200px; position: relative; }
+    .hist-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 24px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>LLM Token Monitor <span>/ live</span></h1>
+  <div class="header-right">
+    <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Theme">
+      <button data-theme-val="light" title="Light">☀</button>
+      <button data-theme-val="auto" title="Auto (follow system)">◐</button>
+      <button data-theme-val="dark" title="Dark">☾</button>
+    </div>
+    <div class="refresh-ctl">
+      <span>next refresh</span>
+      <span class="countdown" id="countdown">—</span>
+      <button class="rbtn" id="refresh-btn" title="Refresh now">↻</button>
+    </div>
+    <div class="dot" id="dot"></div>
+    <span id="ts">connecting…</span>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="hero-main">
+    <div class="hero-num" id="hero-num">—</div>
+    <div>
+      <div class="hero-label">total tokens saved</div>
+      <div class="hero-label" style="opacity:0.7">across RTK · Caveman · Headroom cache</div>
+    </div>
+  </div>
+  <div class="hero-chips" id="hero-chips"></div>
+</div>
+
+<div class="board">
+  <!-- LEFT: Headroom -->
+  <div class="board-col">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Headroom</span>
+        <div class="accent" style="background:var(--headroom)"></div>
+      </div>
+      <div id="hdr"><span class="loading">…</span></div>
+    </div>
+  </div>
+
+  <!-- MIDDLE: RTK on top, Caveman under -->
+  <div class="board-col">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">RTK</span>
+        <div class="accent" style="background:var(--rtk)"></div>
+      </div>
+      <div id="rtk"><span class="loading">…</span></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Caveman</span>
+        <div class="accent" style="background:var(--caveman)"></div>
+      </div>
+      <div id="cav"><span class="loading">…</span></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: trend graphs -->
+  <div class="board-col">
+    <div class="card graph-card">
+      <div class="card-header">
+        <span class="card-title">Trends</span>
+        <div class="hist-range" id="hist-range">
+          <button class="rbtn rng" data-min="60">1h</button>
+          <button class="rbtn rng active" data-min="360">6h</button>
+          <button class="rbtn rng" data-min="1440">24h</button>
+          <button class="rbtn rng" data-min="0">all</button>
+        </div>
+      </div>
+      <div class="hist-title">Tokens saved over time <span>RTK · Caveman · Headroom cache</span></div>
+      <div class="hist-canvas"><canvas id="hc-saved"></canvas></div>
+      <div class="divider"></div>
+      <div class="hist-title">Cost over time <span>raw · real · saved ($)</span></div>
+      <div class="hist-canvas"><canvas id="hc-cost"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<section class="history">
+  <div class="hist-head">
+    <h2>History detail</h2>
+  </div>
+  <div class="hist-grid">
+    <div class="hist-card">
+      <div class="hist-title">Real cost by model <span>($)</span></div>
+      <div class="hist-canvas"><canvas id="hc-models"></canvas></div>
+    </div>
+    <div class="hist-card">
+      <div class="hist-title">Headroom quota <span>5h · 7d utilization %</span></div>
+      <div class="hist-canvas"><canvas id="hc-quota"></canvas></div>
+    </div>
+  </div>
+  <div class="hist-empty" id="hist-empty">Collecting history… charts appear after the first few snapshots (recorded every 60s).</div>
+</section>
+
+<script>
+// ---- theme ----
+function tc(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue('--' + name).trim() || '#888';
+}
+function applyTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  try { localStorage.setItem('ltm-theme', mode); } catch {}
+  document.querySelectorAll('#theme-toggle button').forEach(b =>
+    b.classList.toggle('active', b.dataset.themeVal === mode));
+  redrawAllCharts();
+}
+function initTheme() {
+  let saved = 'auto';
+  try { saved = localStorage.getItem('ltm-theme') || 'auto'; } catch {}
+  document.documentElement.setAttribute('data-theme', saved);
+  document.querySelectorAll('#theme-toggle button').forEach(b => {
+    b.classList.toggle('active', b.dataset.themeVal === saved);
+    b.addEventListener('click', () => applyTheme(b.dataset.themeVal));
+  });
+  // when in auto mode, repaint charts if the OS theme flips
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+      if ((document.documentElement.getAttribute('data-theme')) === 'auto') redrawAllCharts();
+    });
+  }
+}
+function redrawAllCharts() {
+  if (rtkChart) { rtkChart.destroy(); rtkChart = null; }
+  Object.values(histCharts).forEach(c => c && c.destroy());
+  for (const k of Object.keys(histCharts)) delete histCharts[k];
+  if (lastStats && lastStats.rtk && (lastStats.rtk.daily || []).length) drawRTKChart(lastStats.rtk.daily);
+  renderHistory();
+}
+
+let rtkChart = null;
+let lastStats = null;
+
+const MODE_COLORS = {
+  full: '#d4a72c', ultra: '#f97316', lite: '#fbbf24',
+  'wenyan-lite': '#a78bfa', 'wenyan-full': '#8b5cf6',
+  'wenyan-ultra': '#7c3aed', wenyan: '#8b5cf6',
+  off: '#6b7280', commit: '#58a6ff', review: '#3fb950', compress: '#38bdf8',
+};
+
+function ht(n) {
+  if (n === null || n === undefined) return '—';
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(n);
+}
+function pct(n) { return (n === null || n === undefined) ? '—' : n.toFixed(1) + '%'; }
+function usd(n) { return (n === null || n === undefined) ? '—' : '$' + n.toFixed(4); }
+function usdFull(n) {
+  if (n === null || n === undefined) return '—';
+  if (n >= 1) return '$' + n.toFixed(2);
+  if (n >= 0.01) return '$' + n.toFixed(3);
+  return '$' + n.toFixed(4);
+}
+function countdown(secs) {
+  if (!secs) return '';
+  if (secs > 86400) return `resets in ${Math.floor(secs/86400)}d ${Math.floor((secs%86400)/3600)}h`;
+  if (secs > 3600)  return `resets in ${Math.floor(secs/3600)}h ${Math.floor((secs%3600)/60)}m`;
+  return `resets in ${Math.floor(secs/60)}m`;
+}
+function barColor(p) {
+  return p > 80 ? '#f85149' : p > 60 ? '#d29922' : '#3fb950';
+}
+
+// cache reads are billed ~10% of input price → ~90% saved vs uncached
+function cacheSavings(wt) {
+  return Math.round((wt.cache_reads || 0) * 0.9);
+}
+
+// Universal Claude billing ratios (in units of that model's input token):
+// output 5×, cache-read 0.1×, cache-write-5m 1.25×, cache-write-1h 2×.
+function modelRaw(m) {
+  return (m.input||0) + (m.output||0) + (m.cache_reads||0) + (m.cache_writes_total||0);
+}
+function modelWeighted(m) {
+  const writes5m = m.cache_writes_5m || 0;
+  const writes1h = m.cache_writes_1h || 0;
+  // fall back to total at 1.25× if the 5m/1h split is absent
+  const writeW = (writes5m || writes1h) ? writes5m*1.25 + writes1h*2 : (m.cache_writes_total||0)*1.25;
+  return Math.round((m.input||0)*1 + (m.output||0)*5 + (m.cache_reads||0)*0.1 + writeW);
+}
+
+// USD per million tokens by category. Matched to model name by prefix.
+// cache rates: read 0.1×, write-5m 1.25×, write-1h 2× of input price.
+const PRICING = [
+  ['claude-opus-4',   { in: 5,  out: 25, cr: 0.50, cw5: 6.25,  cw1: 10 }],
+  ['claude-sonnet-4', { in: 3,  out: 15, cr: 0.30, cw5: 3.75,  cw1: 6  }],
+  ['claude-haiku-4',  { in: 1,  out: 5,  cr: 0.10, cw5: 1.25,  cw1: 2  }],
+  ['claude-fable-5',  { in: 10, out: 50, cr: 1.00, cw5: 12.50, cw1: 20 }],
+];
+function priceFor(name) {
+  for (const [prefix, p] of PRICING) if (name.startsWith(prefix)) return p;
+  return null;
+}
+// real (weighted) cost — cache reads/writes at discounted/premium rates
+function modelUsd(name, m) {
+  const p = priceFor(name);
+  if (!p) return null;
+  const writes5m = m.cache_writes_5m || 0;
+  const writes1h = m.cache_writes_1h || 0;
+  const writeUsd = (writes5m || writes1h)
+    ? writes5m*p.cw5 + writes1h*p.cw1
+    : (m.cache_writes_total||0)*p.cw5;
+  return ((m.input||0)*p.in + (m.output||0)*p.out + (m.cache_reads||0)*p.cr + writeUsd) / 1e6;
+}
+// raw cost — every cache token billed at full input price (no caching)
+function modelUsdRaw(name, m) {
+  const p = priceFor(name);
+  if (!p) return null;
+  const cacheAll = (m.cache_reads||0) + (m.cache_writes_total||0);
+  return ((m.input||0)*p.in + (m.output||0)*p.out + cacheAll*p.in) / 1e6;
+}
+
+function renderModels(byModel) {
+  if (!byModel) return '';
+  const entries = Object.entries(byModel)
+    .map(([name, m]) => ({ name, raw: modelRaw(m), weighted: modelWeighted(m),
+      usd: modelUsd(name, m), rawUsd: modelUsdRaw(name, m) }))
+    .filter(e => e.raw > 0 && e.name !== '<synthetic>')
+    .sort((a, b) => b.raw - a.raw);
+  if (!entries.length) return '';
+  const max = Math.max(...entries.map(e => Math.max(e.raw, e.weighted)));
+  const tReal = entries.reduce((s, e) => s + (e.usd || 0), 0);
+  const tRaw = entries.reduce((s, e) => s + (e.rawUsd || 0), 0);
+  const tSaved = tRaw - tReal;
+  const short = n => n.replace('claude-', '').replace(/-\d{8}$/, '').replace(/-\d{8}T.*$/, '');
+  return `
+    <div class="divider"></div>
+    <div class="tcell-label" style="margin-bottom:10px">Raw vs weighted by model <span style="opacity:0.6">(token bars + raw/real/saved $)</span></div>
+    <div class="mdl-legend">
+      <span><span class="lg-swatch" style="background:var(--muted)"></span>raw</span>
+      <span><span class="lg-swatch" style="background:var(--headroom)"></span>weighted</span>
+    </div>
+    <div class="cost-totals">
+      <div class="ct"><span class="ct-l">raw cost</span><span class="ct-v ct-raw">${usdFull(tRaw)}</span></div>
+      <div class="ct"><span class="ct-l">real cost</span><span class="ct-v ct-real">${usdFull(tReal)}</span></div>
+      <div class="ct"><span class="ct-l">saved</span><span class="ct-v ct-saved">${usdFull(tSaved)}</span></div>
+    </div>
+    ${entries.map(e => {
+      const disc = e.raw ? Math.round((1 - e.weighted/e.raw) * 100) : 0;
+      const saved = (e.rawUsd || 0) - (e.usd || 0);
+      return `
+      <div class="mdl-block">
+        <div class="mdl-block-head">
+          <span class="mdl-name">${short(e.name)}</span>
+          <span class="mdl-figs">${ht(e.raw)} → <b>${ht(e.weighted)}</b> <span class="mdl-disc">−${disc}%</span></span>
+        </div>
+        <div class="mdl-bar-track"><span class="mdl-bar" style="width:${(e.raw/max*100).toFixed(0)}%;background:var(--muted)"></span></div>
+        <div class="mdl-bar-track" style="margin-top:3px"><span class="mdl-bar" style="width:${(e.weighted/max*100).toFixed(0)}%;background:var(--headroom)"></span></div>
+        <div class="mdl-costs">
+          <span>raw <b class="ct-raw">${usdFull(e.rawUsd)}</b></span>
+          <span>real <b class="ct-real">${usdFull(e.usd)}</b></span>
+          <span>saved <b class="ct-saved">${usdFull(saved)}</b></span>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+}
+
+function renderRTK(d) {
+  if (!d || d.error) return '<div class="err">No RTK data</div>';
+  const s = d.summary || {};
+  return `
+    <div class="big" style="color:var(--rtk)">${ht(s.total_saved || 0)}</div>
+    <div class="big-label">tokens saved all-time</div>
+    <div class="rows">
+      <div class="row"><span class="row-label">Commands run</span><span class="row-val">${s.total_commands || 0}</span></div>
+      <div class="row"><span class="row-label">Tokens in</span><span class="row-val">${ht(s.total_input || 0)}</span></div>
+      <div class="row"><span class="row-label">Tokens out</span><span class="row-val">${ht(s.total_output || 0)}</span></div>
+      <div class="row"><span class="row-label">Avg savings</span><span class="row-val" style="color:var(--rtk)">${pct(s.avg_savings_pct)}</span></div>
+      <div class="row"><span class="row-label">Avg exec time</span><span class="row-val">${s.avg_time_ms || 0} ms</span></div>
+    </div>
+    ${(d.daily||[]).length ? '<div class="chart-wrap"><canvas id="rtk-chart"></canvas></div>' : ''}
+  `;
+}
+
+function renderCav(d) {
+  if (!d) return '<div class="err">No Caveman data</div>';
+  const mode = d.mode || 'unknown';
+  const col = MODE_COLORS[mode] || '#8b949e';
+  return `
+    <div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${mode}</div>
+    <div class="big" style="color:var(--caveman)">${ht(d.total_saved_tokens || 0)}</div>
+    <div class="big-label">est. tokens saved</div>
+    <div class="rows">
+      <div class="row"><span class="row-label">Sessions logged</span><span class="row-val">${d.session_count || 0}</span></div>
+      <div class="row"><span class="row-label">Output tokens</span><span class="row-val">${ht(d.total_output_tokens || 0)}</span></div>
+      <div class="row"><span class="row-label">Est. USD saved</span><span class="row-val" style="color:var(--caveman)">${usd(d.total_saved_usd || 0)}</span></div>
+    </div>
+  `;
+}
+
+function renderHdr(d) {
+  if (!d || d.error) return '<div class="err">No Headroom data</div>';
+  const lt = d.latest || {};
+  const fh = lt.five_hour || {};
+  const sd = lt.seven_day || {};
+  const ss = lt.seven_day_sonnet || {};
+  const wt = d.window_tokens || {};
+  const contrib = d.contribution || {};
+  const saved = contrib.tokens_saved || {};
+
+  const fhp = fh.utilization_pct || 0;
+  const sdp = sd.utilization_pct || 0;
+  const ssp = ss.utilization_pct || 0;
+
+  return `
+    <div class="prog-group">
+      <div class="prog-header">
+        <span class="prog-label">5-hour quota</span>
+        <span class="prog-pct" style="color:${barColor(fhp)}">${fhp.toFixed(0)}%</span>
+      </div>
+      <div class="track"><div class="fill" style="width:${Math.min(fhp,100)}%;background:${barColor(fhp)}"></div></div>
+      <div class="prog-sub">${countdown(fh.seconds_to_reset)}</div>
+    </div>
+    <div class="prog-group">
+      <div class="prog-header">
+        <span class="prog-label">7-day quota</span>
+        <span class="prog-pct" style="color:${barColor(sdp)}">${sdp.toFixed(0)}%</span>
+      </div>
+      <div class="track"><div class="fill" style="width:${Math.min(sdp,100)}%;background:${barColor(sdp)}"></div></div>
+      <div class="prog-sub">${countdown(sd.seconds_to_reset)}</div>
+    </div>
+    <div class="prog-group">
+      <div class="prog-header">
+        <span class="prog-label">7-day Sonnet</span>
+        <span class="prog-pct" style="color:${barColor(ssp)}">${ssp.toFixed(0)}%</span>
+      </div>
+      <div class="track"><div class="fill" style="width:${Math.min(ssp,100)}%;background:${barColor(ssp)}"></div></div>
+    </div>
+    <div class="divider"></div>
+    <div class="token-grid">
+      <div class="tcell">
+        <div class="tcell-label">Input</div>
+        <div class="tcell-val" style="color:var(--rtk)">${ht(wt.input || 0)}</div>
+      </div>
+      <div class="tcell">
+        <div class="tcell-label">Output</div>
+        <div class="tcell-val" style="color:var(--rtk)">${ht(wt.output || 0)}</div>
+      </div>
+      <div class="tcell">
+        <div class="tcell-label">Cache reads</div>
+        <div class="tcell-val" style="color:var(--headroom)">${ht(wt.cache_reads || 0)}</div>
+      </div>
+      <div class="tcell">
+        <div class="tcell-label">Weighted total</div>
+        <div class="tcell-val" style="color:var(--headroom)">${ht(wt.weighted_token_equivalent || 0)}</div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="rows">
+      <div class="row" title="Cache reads are billed at ~10% of normal input price. This is the token-equivalent you avoided paying full price for (cache_reads × 0.9).">
+        <span class="row-label">Cache savings <span class="info">?</span></span>
+        <span class="row-val" style="color:var(--headroom)">${ht(cacheSavings(wt))}</span>
+      </div>
+      <div class="row" title="Raw = every token counted at face value. Weighted = the effective billable equivalent after cache discounts (reads ~10%, writes weighted by TTL). Weighted below raw means caching is cutting real cost.">
+        <span class="row-label">Raw → weighted <span class="info">?</span></span>
+        <span class="row-val">${ht(wt.total_raw || 0)} → ${ht(wt.weighted_token_equivalent || 0)}</span>
+      </div>
+      ${saved.total ? `<div class="row" title="Tokens removed by the Headroom proxy's active transforms (compression, filtering). Only nonzero while the proxy is running and processing traffic.">
+        <span class="row-label">Proxy saved <span class="info">?</span></span><span class="row-val" style="color:var(--headroom)">${ht(saved.total)}</span></div>
+      <div class="row"><span class="row-label">Efficiency</span><span class="row-val" style="color:var(--headroom)">${pct(contrib.efficiency_pct)}</span></div>` : ''}
+    </div>
+    <details class="explain">
+      <summary>What is raw vs weighted? <span class="info">?</span></summary>
+      <div class="explain-body">
+        <p><strong>Not all tokens cost the same.</strong> The API charges different rates by token type. Raw ignores that; weighted accounts for it.</p>
+        <ul>
+          <li><strong>Raw</strong> — every token counted as 1, whatever its type. A plain sum.</li>
+          <li><strong>Weighted</strong> — each token scaled by what it actually costs vs a normal input token. The real bill.</li>
+        </ul>
+        <table class="explain-tbl">
+          <tr><th>Token type</th><th>Count</th><th>Rel. cost</th></tr>
+          <tr><td>Fresh input</td><td>${ht(wt.input||0)}</td><td>1×</td></tr>
+          <tr><td>Output</td><td>${ht(wt.output||0)}</td><td>most</td></tr>
+          <tr><td>Cache reads</td><td>${ht(wt.cache_reads||0)}</td><td>~0.1× (cheap)</td></tr>
+          <tr><td>Cache writes 5m</td><td>${ht(wt.cache_writes_5m||0)}</td><td>~1.25×</td></tr>
+          <tr><td>Cache writes 1h</td><td>${ht(wt.cache_writes_1h||0)}</td><td>~2×</td></tr>
+          <tr class="tbl-sum"><td>Raw total</td><td>${ht(wt.total_raw||0)}</td><td>—</td></tr>
+          <tr class="tbl-sum"><td>Weighted total</td><td>${ht(wt.weighted_token_equivalent||0)}</td><td>—</td></tr>
+        </table>
+        <p><strong>Why weighted is lower:</strong> cache reads are ${wt.total_raw ? Math.round((wt.cache_reads||0)/wt.total_raw*100) : 0}% of all tokens but billed at ~10%. That discount pulls weighted below raw.</p>
+        <div class="cmp">
+          <div class="cmp-row"><span class="cmp-tag">Raw</span><span class="cmp-track"><span class="cmp-fill" style="width:100%;background:var(--muted)"></span></span><span class="cmp-n">${ht(wt.total_raw||0)}</span></div>
+          <div class="cmp-row"><span class="cmp-tag">Weighted</span><span class="cmp-track"><span class="cmp-fill" style="width:${wt.total_raw?(wt.weighted_token_equivalent/wt.total_raw*100).toFixed(0):0}%;background:var(--headroom)"></span></span><span class="cmp-n">${ht(wt.weighted_token_equivalent||0)}</span></div>
+        </div>
+        <p class="explain-note">The gap = your caching discount. Bigger gap = more saved. Weighted equal to raw would mean zero cache benefit.</p>
+      </div>
+    </details>
+    ${renderModels(wt.by_model)}
+  `;
+}
+
+function drawRTKChart(daily) {
+  const canvas = document.getElementById('rtk-chart');
+  if (!canvas) return;
+  const data14 = daily.slice(-14);
+  const labels = data14.map(d => d.date.slice(5));
+  const vals = data14.map(d => d.saved_tokens || 0);
+
+  if (rtkChart) {
+    rtkChart.data.labels = labels;
+    rtkChart.data.datasets[0].data = vals;
+    rtkChart.update('none');
+    return;
+  }
+  rtkChart = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: vals,
+        backgroundColor: 'rgba(88,166,255,0.45)',
+        borderColor: '#58a6ff',
+        borderWidth: 1,
+        borderRadius: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${ht(c.raw)} saved` } },
+      },
+      scales: {
+        x: { ticks: { color: tc('muted'), font: { size: 10 } }, grid: { color: tc('grid') } },
+        y: { ticks: { color: tc('muted'), font: { size: 10 }, callback: v => ht(v) }, grid: { color: tc('grid') } },
+      },
+    },
+  });
+}
+
+function renderHero(stats) {
+  const rtkSaved = (stats.rtk && stats.rtk.summary) ? (stats.rtk.summary.total_saved || 0) : 0;
+  const cavSaved = (stats.caveman) ? (stats.caveman.total_saved_tokens || 0) : 0;
+  const hdrSaved = (stats.headroom && stats.headroom.window_tokens) ? cacheSavings(stats.headroom.window_tokens) : 0;
+  const total = rtkSaved + cavSaved + hdrSaved;
+
+  document.getElementById('hero-num').textContent = ht(total);
+  document.getElementById('hero-chips').innerHTML = `
+    <div class="chip" style="border-left-color:var(--rtk)">
+      <span class="chip-label">RTK</span><span class="chip-val" style="color:var(--rtk)">${ht(rtkSaved)}</span>
+    </div>
+    <div class="chip" style="border-left-color:var(--caveman)">
+      <span class="chip-label">Caveman</span><span class="chip-val" style="color:var(--caveman)">${ht(cavSaved)}</span>
+    </div>
+    <div class="chip" style="border-left-color:var(--headroom)">
+      <span class="chip-label">Headroom cache</span><span class="chip-val" style="color:var(--headroom)">${ht(hdrSaved)}</span>
+    </div>`;
+}
+
+let explainOpen = false;  // persists the raw-vs-weighted panel across refreshes
+
+function render(stats) {
+  lastStats = stats;
+  renderHero(stats);
+  document.getElementById('rtk').innerHTML = renderRTK(stats.rtk);
+  document.getElementById('cav').innerHTML = renderCav(stats.caveman);
+
+  // skip rebuilding the Headroom card while the explainer is open — don't interrupt reading
+  if (!explainOpen) {
+    document.getElementById('hdr').innerHTML = renderHdr(stats.headroom);
+    const ex = document.querySelector('.explain');
+    if (ex) {
+      ex.open = explainOpen;
+      ex.addEventListener('toggle', () => { explainOpen = ex.open; });
+    }
+  }
+
+  if (stats.rtk && !stats.rtk.error && (stats.rtk.daily || []).length) {
+    setTimeout(() => drawRTKChart(stats.rtk.daily), 0);
+  }
+
+  const d = new Date(stats.timestamp);
+  document.getElementById('ts').textContent = 'updated ' + d.toLocaleTimeString();
+  document.getElementById('dot').className = 'dot live';
+  resetCountdown(stats.refresh_ms || 10000);
+}
+
+// ---- auto-refresh countdown ----
+let cdRemaining = 10;
+let cdTimer = null;
+function resetCountdown(refreshMs) {
+  cdRemaining = Math.round(refreshMs / 1000);
+  const el = document.getElementById('countdown');
+  if (cdTimer) clearInterval(cdTimer);
+  el.textContent = cdRemaining + 's';
+  cdTimer = setInterval(() => {
+    cdRemaining = Math.max(0, cdRemaining - 1);
+    el.textContent = cdRemaining + 's';
+  }, 1000);
+}
+
+// manual refresh — pulls a fresh snapshot immediately via /api/stats
+async function manualRefresh() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/stats');
+    render(await r.json());
+  } catch (err) { console.error(err); }
+  btn.disabled = false;
+}
+document.getElementById('refresh-btn').addEventListener('click', manualRefresh);
+
+function connect() {
+  const es = new EventSource('/api/events');
+  es.onmessage = e => {
+    try { render(JSON.parse(e.data)); } catch(err) { console.error(err); }
+  };
+  es.onerror = () => {
+    document.getElementById('dot').className = 'dot error';
+    document.getElementById('ts').textContent = 'reconnecting…';
+    if (cdTimer) clearInterval(cdTimer);
+    document.getElementById('countdown').textContent = '—';
+    es.close();
+    setTimeout(connect, 5000);
+  };
+}
+
+initTheme();
+connect();
+
+// ============ HISTORY CHARTS ============
+let histData = [];
+let histRangeMin = 360; // default 6h
+const histCharts = {};
+const MODEL_COLORS_HC = ['#58a6ff', '#d4a72c', '#3fb950', '#f97316', '#a78bfa', '#f85149'];
+
+function filterHist() {
+  if (!histRangeMin) return histData;
+  const cutoff = Date.now() - histRangeMin * 60000;
+  return histData.filter(r => r.t >= cutoff);
+}
+
+const hcBase = (extra) => ({
+  type: 'line',
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { labels: { color: tc('muted'), font: { size: 11 }, boxWidth: 12, padding: 8 } },
+      tooltip: { callbacks: extra.tooltip || {} },
+    },
+    elements: { point: { radius: 0, hitRadius: 8 }, line: { tension: 0.25, borderWidth: 2 } },
+    scales: {
+      x: { ticks: { color: tc('muted'), font: { size: 10 }, maxTicksLimit: 6 }, grid: { color: tc('grid') } },
+      y: { ticks: { color: tc('muted'), font: { size: 10 }, callback: extra.yfmt }, grid: { color: tc('grid') }, beginAtZero: true },
+    },
+  },
+});
+
+function drawLine(id, labels, datasets, yfmt, tipfmt) {
+  const cv = document.getElementById(id);
+  if (!cv) return;
+  if (histCharts[id]) {
+    histCharts[id].data.labels = labels;
+    histCharts[id].data.datasets = datasets;
+    histCharts[id].update('none');
+    return;
+  }
+  const cfg = hcBase({ yfmt, tooltip: { label: tipfmt } });
+  cfg.data = { labels, datasets };
+  histCharts[id] = new Chart(cv.getContext('2d'), cfg);
+}
+
+function renderHistory() {
+  const rows = filterHist();
+  const empty = document.getElementById('hist-empty');
+  if (rows.length < 2) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  const labels = rows.map(r => new Date(r.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+  const ds = (data, color, label) => ({ label, data, borderColor: color, backgroundColor: color + '22', fill: false });
+
+  // 1. tokens saved
+  drawLine('hc-saved', labels, [
+    ds(rows.map(r => r.rtk?.saved || 0), '#58a6ff', 'RTK'),
+    ds(rows.map(r => r.cav?.saved || 0), '#d4a72c', 'Caveman'),
+    ds(rows.map(r => r.hr?.cacheSave || 0), '#3fb950', 'Headroom cache'),
+  ], ht, c => ` ${c.dataset.label}: ${ht(c.raw)}`);
+
+  // 2. cost raw/real/saved
+  drawLine('hc-cost', labels, [
+    ds(rows.map(r => r.hr?.rawUsd || 0), tc('muted'), 'raw'),
+    ds(rows.map(r => r.hr?.usd || 0), '#d4a72c', 'real'),
+    ds(rows.map(r => r.hr?.saved || 0), '#3fb950', 'saved'),
+  ], v => '$' + v.toFixed(0), c => ` ${c.dataset.label}: ${usdFull(c.raw)}`);
+
+  // 3. real cost by model
+  const modelNames = [...new Set(rows.flatMap(r => Object.keys(r.hr?.models || {})))];
+  drawLine('hc-models', labels, modelNames.map((name, i) =>
+    ds(rows.map(r => (r.hr?.models?.[name]?.usd) || 0), MODEL_COLORS_HC[i % MODEL_COLORS_HC.length], name)
+  ), v => '$' + v.toFixed(0), c => ` ${c.dataset.label}: ${usdFull(c.raw)}`);
+
+  // 4. quota
+  drawLine('hc-quota', labels, [
+    ds(rows.map(r => r.hr?.q5 || 0), '#58a6ff', '5-hour'),
+    ds(rows.map(r => r.hr?.q7 || 0), '#f97316', '7-day'),
+  ], v => v + '%', c => ` ${c.dataset.label}: ${c.raw}%`);
+}
+
+async function fetchHistory() {
+  try {
+    const r = await fetch('/api/history');
+    histData = await r.json();
+    renderHistory();
+  } catch (err) { console.error(err); }
+}
+
+document.querySelectorAll('.rng').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.rng').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    histRangeMin = Number(btn.dataset.min);
+    renderHistory();
+  });
+});
+
+fetchHistory();
+setInterval(fetchHistory, 60000);
+</script>
+</body>
+</html>

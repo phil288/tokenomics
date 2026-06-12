@@ -1,0 +1,29 @@
+{
+  "name": "llm-token-monitor",
+  "version": "1.0.0",
+  "description": "Real-time browser dashboard for RTK, Caveman, and Headroom token-savings stats, with time-series history and per-model cost tracking.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "bin": {
+    "llm-token-monitor": "server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "llm",
+    "tokens",
+    "dashboard",
+    "rtk",
+    "caveman",
+    "headroom",
+    "claude",
+    "cost-tracking",
+    "monitoring"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {}
+}

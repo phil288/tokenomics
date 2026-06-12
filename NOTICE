@@ -1,0 +1,22 @@
+LLM Token Monitor
+Copyright 2026 Phil
+
+Licensed under the Apache License, Version 2.0 (the "License").
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+---
+
+This application reads the command-line output and on-disk state of three
+separate, independently licensed tools. It does NOT bundle, embed, link, or
+redistribute their source code or binaries — it only consumes their public
+output. Each remains the property of its respective authors under its own
+license:
+
+  • RTK (Rust Token Killer)   — https://github.com/rtk-ai/rtk
+  • Headroom                  — Apache License 2.0
+  • Caveman                   — MIT License, Copyright (c) 2026 Julius Brussee
+
+Apache-2.0 was chosen for this project as the most attribution-preserving
+license of the set; it is compatible with the MIT-licensed Caveman and the
+Apache-2.0-licensed Headroom. Users must install those tools separately; their
+licenses govern their own use.
