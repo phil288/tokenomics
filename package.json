@@ -1,14 +1,15 @@
 {
-  "name": "llm-token-monitor",
+  "name": "tokenomics",
   "version": "1.0.0",
-  "description": "Real-time browser dashboard for RTK, Caveman, and Headroom token-savings stats, with time-series history and per-model cost tracking.",
+  "description": "Tokenomics — real-time browser dashboard for RTK, Caveman, and Headroom token-savings stats, with time-series history and per-model cost tracking.",
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   },
   "bin": {
-    "llm-token-monitor": "server.js"
+    "tokenomics": "server.js"
   },
   "engines": {
     "node": ">=18"

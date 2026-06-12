@@ -1,95 +1,131 @@
-# LLM Token Monitor
+# Tokenomics
 
 Real-time browser dashboard for [RTK](https://github.com/rtk-ai/rtk), Caveman, and
 Headroom token-savings stats — live updates over SSE, time-series history graphs,
-per-model raw/real/saved **cost** tracking, and light/dark/auto themes.
+per-model raw / real / saved **cost** tracking, and light / dark / auto themes.
 
 Zero runtime dependencies (Node.js built-ins only). Charts via Chart.js CDN.
 
+> ⚠️ **Tested with Claude only.** Tokenomics has so far been built and tested against
+> Claude-based usage (Claude Code + Anthropic models). The cost math uses Claude
+> per-model pricing and cache ratios. Other LLM providers (OpenAI / Codex, Gemini,
+> etc.) are **not** yet supported. If you'd like to use another provider, contributions
+> are very welcome — see [Contributing](#contributing).
+
 ## Prerequisites
 
-The dashboard **reads the output** of three tools you install separately:
+Tokenomics **reads the output** of three tools you install separately:
 
-| Tool | Provides | Install |
-|------|----------|---------|
-| RTK (Rust Token Killer) | `rtk gain -f json -a` | see https://github.com/rtk-ai/rtk |
+| Tool | Reads | Install |
+|------|-------|---------|
+| RTK (Rust Token Killer) | `rtk gain -f json -a` | https://github.com/rtk-ai/rtk |
 | Headroom | `~/.headroom/subscription_state.json` | `pipx install headroom-ai` |
 | Caveman | `~/.claude/.caveman-active` + `.caveman-history.jsonl` | Claude Code plugin |
 
 Any subset works — missing tools just show "No data" on their card.
 Requires **Node.js ≥ 18**.
 
-## Run once (test)
+## Quick start
 
 ```bash
+git clone https://github.com/<your-username>/tokenomics.git
+cd tokenomics
 node server.js          # then open http://localhost:3000
 ```
 
-## Install as systemd user service
-
-**1. Create the service file:**
+Or via npm:
 
 ```bash
-cat > ~/.config/systemd/user/llm-token-monitor.service << 'EOF'
+npm start
+```
+
+## Development
+
+Frontend changes (`index.html`) are served fresh on every request — just **refresh
+the browser**, no restart. For backend changes (`server.js`), use watch mode (auto-
+restarts on save):
+
+```bash
+systemctl --user stop tokenomics   # if running as a service, free the port
+npm run dev                        # node --watch server.js
+```
+
+## Run as a service (Linux / systemd)
+
+Run Tokenomics in the background so it survives logout and restarts on failure.
+
+**1. Create the unit** (adjust `WorkingDirectory` and the `node` path to your setup):
+
+```ini
+# ~/.config/systemd/user/tokenomics.service
 [Unit]
-Description=LLM Token Monitoring Dashboard
+Description=Tokenomics Dashboard
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/phil/dev/personal/llm-token-monitoring
-ExecStart=/home/phil/.nvm/versions/node/v26.3.0/bin/node /home/phil/dev/personal/llm-token-monitoring/server.js
+WorkingDirectory=%h/tokenomics
+ExecStart=/usr/bin/env node %h/tokenomics/server.js
 Restart=on-failure
 RestartSec=5
-Environment=HOME=/home/phil
-Environment=PATH=/home/phil/.local/bin:/home/phil/.nvm/versions/node/v26.3.0/bin:/usr/local/bin:/usr/bin:/bin
 StandardOutput=journal
 StandardError=journal
 
 [Install]
 WantedBy=default.target
-EOF
 ```
 
 **2. Enable and start:**
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable llm-token-monitor.service
-systemctl --user start llm-token-monitor.service
+systemctl --user enable --now tokenomics.service
+loginctl enable-linger "$USER"   # keep running without an active login
 ```
 
-**3. Keep running after logout (optional):**
+**3. Manage:**
 
 ```bash
-loginctl enable-linger phil
+systemctl --user status tokenomics      # check status
+systemctl --user restart tokenomics     # restart
+systemctl --user stop tokenomics        # stop
+journalctl --user -u tokenomics -f      # tail logs
 ```
 
-## Manage
+## Configuration
 
-```bash
-systemctl --user status llm-token-monitor   # check status
-systemctl --user restart llm-token-monitor  # restart
-systemctl --user stop llm-token-monitor     # stop
-journalctl --user -u llm-token-monitor -f   # tail logs
-```
+Set via environment variables (e.g. in the systemd unit or your shell):
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `PORT` | `3000` | HTTP port |
+| `REFRESH_MS` | `10000` | live push / countdown interval (ms) |
+| `HISTORY_INTERVAL_MS` | `60000` | history record cadence (ms) |
+| `HISTORY_MAX` | `5000` | max retained history points (~3.5 days at 60s) |
+| `RTK_DATA_HOME` | auto | pin RTK to a single data dir instead of aggregating all of them |
+
+> **RTK across launchers:** RTK stores its DB under `$XDG_DATA_HOME/rtk`, and different
+> launchers set `XDG_DATA_HOME` differently (a VSCode *snap* uses
+> `~/snap/code/<rev>/.local/share`, a plain service has none → `~/.local/share`). So your
+> usage can be split across several `history.db` files. Tokenomics finds **every** RTK
+> database (deduped by real path), runs `rtk gain -a` against each, and **merges** the
+> totals and daily/weekly/monthly breakdowns — so no project or launcher is missed. Set
+> `RTK_DATA_HOME` to pin a single location instead.
 
 ## Data sources
 
 | Card | Source |
 |------|--------|
-| RTK | `rtk gain -f json -a` |
-| Caveman | `~/.claude/.caveman-active` + `~/.claude/.caveman-history.jsonl` |
+| RTK | `rtk gain -f json -a`, merged across all discovered `history.db` files |
+| Caveman | `~/.claude/.caveman-active` + `~/.claude/.caveman-history.jsonl` (latest per session) |
 | Headroom | `~/.headroom/subscription_state.json` |
 
 ## History / graphs
 
 The server records a compact snapshot every 60s to `data/history.jsonl` (per-tool
-savings, per-model raw/weighted tokens, raw/real/saved cost in USD, quota %). The
-dashboard's **History** section draws line charts over a selectable range (1h/6h/24h/all).
-
-- Endpoint: `GET /api/history` → array of snapshot rows
-- File is capped at the last 5000 points (~3.5 days) and is gitignored.
+savings, per-model raw / weighted tokens, raw / real / saved cost in USD, quota %).
+The dashboard's history charts draw line graphs over a selectable range (1h / 6h /
+24h / all). The file is capped at the last 5000 points and is gitignored.
 
 ## Endpoints
 
@@ -100,20 +136,28 @@ dashboard's **History** section draws line charts over a selectable range (1h/6h
 | `GET /api/events` | SSE stream (push every `REFRESH_MS`) |
 | `GET /api/history` | recorded time-series |
 
-## Environment variables
+## How cost is computed
 
-| Var | Default | Meaning |
-|-----|---------|---------|
-| `PORT` | `3000` | HTTP port |
-| `REFRESH_MS` | `10000` | live push / countdown interval |
-| `HISTORY_INTERVAL_MS` | `60000` | history record cadence |
-| `HISTORY_MAX` | `5000` | max retained history points |
+Per-model billable cost uses public per-million-token rates with the standard
+Claude cache ratios (cache read ≈ 0.1× input, cache write ≈ 1.25×/2× input):
+
+- **Raw** — every cache token billed at full input price (i.e. as if no caching)
+- **Real** — the actual bill, with cache discounts applied
+- **Saved** — `raw − real`, the money caching saved you
+
+## Contributing
+
+Contributions are welcome — especially **support for other LLM providers**.
+Tokenomics was developed and tested with Claude only; adding OpenAI / Codex,
+Gemini, or others mainly means extending the per-model pricing table and cache
+ratios (in `server.js` and `index.html`) and confirming the corresponding tool
+output is parsed correctly. Open an issue or PR.
 
 ## License
 
 Licensed under the **Apache License 2.0** — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-This project does not bundle or redistribute RTK, Headroom, or Caveman — it only
+Tokenomics does not bundle or redistribute RTK, Headroom, or Caveman — it only
 reads their public CLI output and on-disk state. Each tool remains under its own
 license (Caveman: MIT · Headroom: Apache-2.0 · RTK: see its repo). Apache-2.0 was
 chosen as the most attribution-preserving license compatible with all three.

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LLM Token Monitor</title>
+  <title>Tokenomics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -374,7 +374,7 @@
 <body>
 
 <header>
-  <h1>LLM Token Monitor <span>/ live</span></h1>
+  <h1>Tokenomics <span>/ live</span></h1>
   <div class="header-right">
     <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Theme">
       <button data-theme-val="light" title="Light">☀</button>
@@ -901,6 +901,7 @@ connect();
 // ============ HISTORY CHARTS ============
 let histData = [];
 let histRangeMin = 360; // default 6h
+try { const s = localStorage.getItem('ltm-range'); if (s !== null) histRangeMin = Number(s); } catch {}
 const histCharts = {};
 const MODEL_COLORS_HC = ['#58a6ff', '#d4a72c', '#3fb950', '#f97316', '#a78bfa', '#f85149'];
 
@@ -986,10 +987,13 @@ async function fetchHistory() {
 }
 
 document.querySelectorAll('.rng').forEach(btn => {
+  // restore active state from saved range
+  btn.classList.toggle('active', Number(btn.dataset.min) === histRangeMin);
   btn.addEventListener('click', () => {
     document.querySelectorAll('.rng').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     histRangeMin = Number(btn.dataset.min);
+    try { localStorage.setItem('ltm-range', String(histRangeMin)); } catch {}
     renderHistory();
   });
 });

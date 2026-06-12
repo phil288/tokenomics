@@ -46,9 +46,19 @@ function mUsdRaw(name, m) {
 }
 const shortModel = n => n.replace('claude-', '').replace(/-\d{8}$/, '').replace(/-\d{8}T.*$/, '');
 
-function execPromise(cmd) {
+// systemd user services run with a minimal PATH that omits ~/.local/bin and
+// other common install dirs, so `rtk` (a binary on PATH) goes unfound and its
+// card silently reads 0. Augment PATH so tools resolve regardless of launcher.
+const EXEC_PATH = [
+  path.join(HOME, '.local', 'bin'),
+  path.join(HOME, 'bin'),
+  '/usr/local/bin', '/usr/bin', '/bin',
+  process.env.PATH || '',
+].filter(Boolean).join(':');
+
+function execPromise(cmd, extraEnv = {}) {
   return new Promise((resolve) => {
-    exec(cmd, { timeout: 10000 }, (err, stdout) => {
+    exec(cmd, { timeout: 10000, env: { ...process.env, PATH: EXEC_PATH, ...extraEnv } }, (err, stdout) => {
       resolve(err ? null : stdout);
     });
   });
@@ -60,10 +70,104 @@ function readFile(filePath) {
   });
 }
 
+// RTK stores its history.db under $XDG_DATA_HOME/rtk. Different launchers set
+// XDG_DATA_HOME differently — notably Claude Code in a VSCode *snap* points it
+// at ~/snap/code/<rev>/.local/share, while a plain systemd service has none and
+// falls back to ~/.local/share. That mismatch makes the dashboard read an empty
+// DB ("RTK reset to 0"). Resolve the *live* DB by scanning candidate share dirs
+// and picking the rtk/history.db with the newest mtime. Override with RTK_DATA_HOME.
+function listSnapShareDirs() {
+  const dirs = [];
+  const snapCode = path.join(HOME, 'snap', 'code');
+  try {
+    for (const rev of fs.readdirSync(snapCode)) {
+      dirs.push(path.join(snapCode, rev, '.local', 'share'));
+    }
+  } catch {}
+  return dirs;
+}
+
+// Every distinct share dir that actually holds an rtk/history.db, deduped by the
+// real DB path (so an XDG_DATA_HOME pointing at one of the snap dirs isn't counted
+// twice). RTK_DATA_HOME forces a single location.
+function rtkDataHomes() {
+  if (process.env.RTK_DATA_HOME) return [process.env.RTK_DATA_HOME];
+  const candidates = [
+    process.env.XDG_DATA_HOME,
+    path.join(HOME, '.local', 'share'),
+    ...listSnapShareDirs(),
+  ].filter(Boolean);
+
+  const seen = new Set(), homes = [];
+  for (const share of candidates) {
+    try {
+      const real = fs.realpathSync(path.join(share, 'rtk', 'history.db'));
+      if (!seen.has(real)) { seen.add(real); homes.push(share); }
+    } catch {}
+  }
+  return homes;
+}
+
+// Sum summaries and merge per-period breakdowns across multiple RTK databases.
+function mergeRTK(list) {
+  const sum = { total_commands: 0, total_input: 0, total_output: 0, total_saved: 0, total_time_ms: 0 };
+  const byKey = { daily: new Map(), weekly: new Map(), monthly: new Map() };
+  const keyOf = { daily: r => r.date, weekly: r => r.week_start, monthly: r => r.month };
+
+  for (const g of list) {
+    const s = g.summary || {};
+    sum.total_commands += s.total_commands || 0;
+    sum.total_input += s.total_input || 0;
+    sum.total_output += s.total_output || 0;
+    sum.total_saved += s.total_saved || 0;
+    sum.total_time_ms += s.total_time_ms || 0;
+    for (const period of ['daily', 'weekly', 'monthly']) {
+      for (const r of g[period] || []) {
+        const k = keyOf[period](r);
+        const m = byKey[period];
+        const cur = m.get(k) || { ...r, commands: 0, input_tokens: 0, output_tokens: 0, saved_tokens: 0, total_time_ms: 0 };
+        cur.commands += r.commands || 0;
+        cur.input_tokens += r.input_tokens || 0;
+        cur.output_tokens += r.output_tokens || 0;
+        cur.saved_tokens += r.saved_tokens || 0;
+        cur.total_time_ms += r.total_time_ms || 0;
+        m.set(k, cur);
+      }
+    }
+  }
+
+  const pct = (saved, input) => input ? (saved / input) * 100 : 0;
+  const finalizePeriod = (m, dateKey) => [...m.values()]
+    .map(r => ({ ...r, savings_pct: pct(r.saved_tokens, r.input_tokens),
+      avg_time_ms: r.commands ? Math.round(r.total_time_ms / r.commands) : 0 }))
+    .sort((a, b) => String(a[dateKey]).localeCompare(String(b[dateKey])));
+
+  return {
+    summary: {
+      ...sum,
+      avg_savings_pct: pct(sum.total_saved, sum.total_input),
+      avg_time_ms: sum.total_commands ? Math.round(sum.total_time_ms / sum.total_commands) : 0,
+    },
+    daily: finalizePeriod(byKey.daily, 'date'),
+    weekly: finalizePeriod(byKey.weekly, 'week_start'),
+    monthly: finalizePeriod(byKey.monthly, 'month'),
+    sources: list.length,
+  };
+}
+
 async function collectRTK() {
-  const out = await execPromise('rtk gain -f json -a');
-  if (!out) return { error: 'no data' };
-  try { return JSON.parse(out); } catch { return { error: 'parse error' }; }
+  const homes = rtkDataHomes();
+  // No DB found in any candidate → let rtk pick its own default.
+  const envs = homes.length ? homes.map(h => ({ XDG_DATA_HOME: h })) : [{}];
+
+  const results = (await Promise.all(
+    envs.map(env => execPromise('rtk gain -f json -a', env).then(o => {
+      try { return JSON.parse(o); } catch { return null; }
+    }))
+  )).filter(Boolean);
+
+  if (!results.length) return { error: 'no data' };
+  return results.length === 1 ? results[0] : mergeRTK(results);
 }
 
 async function collectCaveman() {
@@ -239,5 +343,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`LLM Token Monitor → http://localhost:${PORT}`);
+  console.log(`Tokenomics → http://localhost:${PORT}`);
 });
