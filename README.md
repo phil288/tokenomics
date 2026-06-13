@@ -90,7 +90,21 @@ journalctl --user -u tokenomics -f      # tail logs
 
 ## Configuration
 
-Set via environment variables (e.g. in the systemd unit or your shell):
+Tokenomics supports configuration via both environment variables (for server behavior) and an interactive settings dashboard panel in the browser.
+
+### 1. Interactive UI Settings (⚙️)
+
+Clicking the gear icon (⚙️) in the top-right corner of the dashboard allows you to configure settings on the fly. These are persisted locally to `data/settings.json` on the server:
+
+- **Enable Cursor Stats**: Toggle the query and display of Cursor usage statistics.
+- **Cursor Access Token**: Input a custom Cursor API access token or JWT. If left blank, Tokenomics automatically extracts the active session JWT from your local Cursor SQLite database (`~/.config/Cursor/User/globalStorage/state.vscdb`) or the `CURSOR_ACCESS_TOKEN` environment variable.
+- **RTK Data Home**: Specify a custom directory path for RTK database aggregation.
+- **Headroom Savings JSON Path**: Specify a custom path to Headroom's `subscription_state.json` file.
+- **Dynamic Model Pricing**: View and customize the pricing matrix (USD per million tokens) and caching multipliers (Input, Output, Cache Reads, Cache Writes 5m, Cache Writes 1h) for any LLM prefix dynamically without restarting the server.
+
+### 2. Environment Variables
+
+Server-level configurations can be specified using environment variables (e.g. in your systemd service unit or shell):
 
 | Var | Default | Meaning |
 |-----|---------|---------|
