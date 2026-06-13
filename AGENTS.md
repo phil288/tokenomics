@@ -42,7 +42,7 @@ The project prides itself on having **zero runtime dependencies** (other than No
 - All web operations, routing, SSE streaming, child process orchestration, and file reads must continue to use Node.js standard library APIs (`http`, `fs`, `path`, `child_process`, `os`).
 
 ### 🔄 Keep Cost & Model Lists in Sync
-Both `server.js` and `index.html` define pricing matrices for Claude models:
+Both `server.js` and `index.html` define pricing matrices for Claude, Gemini/Antigravity, and Cursor models:
 - In `server.js`: `const PRICING` array defines model prefixes and token costs / cache multiplier values.
 - In `index.html`: `const PRICING` array handles the representation on the client side.
 - **If you add a new model or update pricing, you must modify BOTH files to keep them perfectly in sync.**
@@ -59,8 +59,8 @@ Both `server.js` and `index.html` define pricing matrices for Claude models:
 Understanding how each source is resolved is crucial for debugging:
 
 ### 1. RTK (Rust Token Killer)
-- Resolved by running the CLI command `rtk gain -f json -a`.
-- Since different launchers (like snaps) specify different `XDG_DATA_HOME` paths, `server.js` scans candidate shared directories (e.g. `~/.local/share`, `~/snap/code/<rev>/.local/share`), finds all active SQLite history databases, queries each individually using `rtk gain`, and merges the daily, weekly, and monthly totals dynamically.
+- Resolved by running the CLI command `rtk gain -g -a`.
+- Since different launchers (like snaps) specify different `XDG_DATA_HOME` paths, `server.js` scans candidate shared directories (e.g. `~/.local/share`, `~/snap/code/<rev>/.local/share`), finds all active SQLite history databases, queries each individually using `rtk gain -g -a`, and merges the daily, weekly, and monthly totals dynamically.
 - Pinned to a specific folder if `RTK_DATA_HOME` is set.
 
 ### 2. Caveman

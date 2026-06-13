@@ -14,37 +14,45 @@ const HISTORY_FILE = path.join(DATA_DIR, 'history.jsonl');
 
 // USD per million tokens; cache rates = read 0.1×, write-5m 1.25×, write-1h 2× of input.
 const PRICING = [
-  ['claude-opus-4',   { in: 5,  out: 25, cr: 0.50, cw5: 6.25,  cw1: 10 }],
-  ['claude-sonnet-4', { in: 3,  out: 15, cr: 0.30, cw5: 3.75,  cw1: 6  }],
-  ['claude-haiku-4',  { in: 1,  out: 5,  cr: 0.10, cw5: 1.25,  cw1: 2  }],
-  ['claude-fable-5',  { in: 10, out: 50, cr: 1.00, cw5: 12.50, cw1: 20 }],
+  ['claude-opus-4', { in: 5, out: 25, cr: 0.50, cw5: 6.25, cw1: 10 }],
+  ['claude-sonnet-4', { in: 3, out: 15, cr: 0.30, cw5: 3.75, cw1: 6 }],
+  ['claude-haiku-4', { in: 1, out: 5, cr: 0.10, cw5: 1.25, cw1: 2 }],
+  ['claude-fable-5', { in: 10, out: 50, cr: 1.00, cw5: 12.50, cw1: 20 }],
+  ['antigravity-3.5-flash', { in: 1.5, out: 9, cr: 0.15, cw5: 1.875, cw1: 3.0 }],
+  ['gemini-3.5-flash', { in: 1.5, out: 9, cr: 0.15, cw5: 1.875, cw1: 3.0 }],
+  ['antigravity-3.1-pro', { in: 2, out: 12, cr: 0.20, cw5: 2.50, cw1: 4.0 }],
+  ['gemini-3.1-pro', { in: 2, out: 12, cr: 0.20, cw5: 2.50, cw1: 4.0 }],
+  ['cursor-opus', { in: 5, out: 25, cr: 0.50, cw5: 6.25, cw1: 10 }],
+  ['cursor-sonnet', { in: 3, out: 15, cr: 0.30, cw5: 3.75, cw1: 6 }],
+  ['cursor-haiku', { in: 1, out: 5, cr: 0.10, cw5: 1.25, cw1: 2 }],
+  ['cursor-small', { in: 0.1, out: 0.5, cr: 0.01, cw5: 0.125, cw1: 0.2 }],
 ];
 function priceFor(name) {
   for (const [prefix, p] of PRICING) if (name.startsWith(prefix)) return p;
   return null;
 }
-function mRaw(m) { return (m.input||0)+(m.output||0)+(m.cache_reads||0)+(m.cache_writes_total||0); }
+function mRaw(m) { return (m.input || 0) + (m.output || 0) + (m.cache_reads || 0) + (m.cache_writes_total || 0); }
 function mWeighted(m) {
-  const a = m.cache_writes_5m||0, b = m.cache_writes_1h||0;
-  const w = (a||b) ? a*1.25 + b*2 : (m.cache_writes_total||0)*1.25;
-  return Math.round((m.input||0) + (m.output||0)*5 + (m.cache_reads||0)*0.1 + w);
+  const a = m.cache_writes_5m || 0, b = m.cache_writes_1h || 0;
+  const w = (a || b) ? a * 1.25 + b * 2 : (m.cache_writes_total || 0) * 1.25;
+  return Math.round((m.input || 0) + (m.output || 0) * 5 + (m.cache_reads || 0) * 0.1 + w);
 }
 // real (weighted) cost: cache reads/writes billed at their discounted/premium rates
 function mUsd(name, m) {
   const p = priceFor(name);
   if (!p) return 0;
-  const a = m.cache_writes_5m||0, b = m.cache_writes_1h||0;
-  const wu = (a||b) ? a*p.cw5 + b*p.cw1 : (m.cache_writes_total||0)*p.cw5;
-  return ((m.input||0)*p.in + (m.output||0)*p.out + (m.cache_reads||0)*p.cr + wu) / 1e6;
+  const a = m.cache_writes_5m || 0, b = m.cache_writes_1h || 0;
+  const wu = (a || b) ? a * p.cw5 + b * p.cw1 : (m.cache_writes_total || 0) * p.cw5;
+  return ((m.input || 0) * p.in + (m.output || 0) * p.out + (m.cache_reads || 0) * p.cr + wu) / 1e6;
 }
 // raw cost: every cache token billed at full input price (i.e. as if no caching)
 function mUsdRaw(name, m) {
   const p = priceFor(name);
   if (!p) return 0;
-  const cacheAll = (m.cache_reads||0) + (m.cache_writes_total||0);
-  return ((m.input||0)*p.in + (m.output||0)*p.out + cacheAll*p.in) / 1e6;
+  const cacheAll = (m.cache_reads || 0) + (m.cache_writes_total || 0);
+  return ((m.input || 0) * p.in + (m.output || 0) * p.out + cacheAll * p.in) / 1e6;
 }
-const shortModel = n => n.replace('claude-', '').replace(/-\d{8}$/, '').replace(/-\d{8}T.*$/, '');
+const shortModel = n => n.replace(/^(claude|gemini|antigravity|cursor)-/, '').replace(/-\d{8}$/, '').replace(/-\d{8}T.*$/, '');
 
 // systemd user services run with a minimal PATH that omits ~/.local/bin and
 // other common install dirs, so `rtk` (a binary on PATH) goes unfound and its
@@ -83,7 +91,7 @@ function listSnapShareDirs() {
     for (const rev of fs.readdirSync(snapCode)) {
       dirs.push(path.join(snapCode, rev, '.local', 'share'));
     }
-  } catch {}
+  } catch { }
   return dirs;
 }
 
@@ -103,7 +111,7 @@ function rtkDataHomes() {
     try {
       const real = fs.realpathSync(path.join(share, 'rtk', 'history.db'));
       if (!seen.has(real)) { seen.add(real); homes.push(share); }
-    } catch {}
+    } catch { }
   }
   return homes;
 }
@@ -138,8 +146,10 @@ function mergeRTK(list) {
 
   const pct = (saved, input) => input ? (saved / input) * 100 : 0;
   const finalizePeriod = (m, dateKey) => [...m.values()]
-    .map(r => ({ ...r, savings_pct: pct(r.saved_tokens, r.input_tokens),
-      avg_time_ms: r.commands ? Math.round(r.total_time_ms / r.commands) : 0 }))
+    .map(r => ({
+      ...r, savings_pct: pct(r.saved_tokens, r.input_tokens),
+      avg_time_ms: r.commands ? Math.round(r.total_time_ms / r.commands) : 0
+    }))
     .sort((a, b) => String(a[dateKey]).localeCompare(String(b[dateKey])));
 
   return {
@@ -155,14 +165,118 @@ function mergeRTK(list) {
   };
 }
 
+function parseRtkVal(str) {
+  str = str.trim().toUpperCase();
+  if (str.endsWith('K')) return parseFloat(str) * 1000;
+  if (str.endsWith('M')) return parseFloat(str) * 1000000;
+  if (str.endsWith('B')) return parseFloat(str) * 1000000000;
+  return parseFloat(str) || 0;
+}
+
+function parseTextRTK(text) {
+  const lines = text.split('\n');
+  const summary = { total_commands: 0, total_input: 0, total_output: 0, total_saved: 0, total_time_ms: 0, avg_savings_pct: 0, avg_time_ms: 0 };
+  const daily = [];
+  const weekly = [];
+  const monthly = [];
+
+  let currentSection = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith('D Daily Breakdown')) {
+      currentSection = 'daily';
+      continue;
+    } else if (trimmed.startsWith('W Weekly Breakdown')) {
+      currentSection = 'weekly';
+      continue;
+    } else if (trimmed.startsWith('M Monthly Breakdown')) {
+      currentSection = 'monthly';
+      continue;
+    }
+
+    if (trimmed.startsWith('Date') || trimmed.startsWith('Week') || trimmed.startsWith('Month') || trimmed.startsWith('──') || trimmed.startsWith('══')) {
+      continue;
+    }
+
+    const parts = trimmed.split(/\s+/);
+    if (parts.length < 7) continue;
+
+    const key = parts[0];
+    if (key === 'TOTAL') {
+      if (currentSection === 'daily') {
+        summary.total_commands = parseInt(parts[1]) || 0;
+        summary.total_input = parseRtkVal(parts[2]);
+        summary.total_output = parseRtkVal(parts[3]);
+        summary.total_saved = parseRtkVal(parts[4]);
+        summary.avg_savings_pct = parseFloat(parts[5]) || 0;
+        summary.total_time_ms = (parseInt(parts[1]) || 0) * (parseInt(parts[6]) || 0);
+        summary.avg_time_ms = parseInt(parts[6]) || 0;
+      }
+      continue;
+    }
+
+    let keyEndIdx = 0;
+    if (trimmed.includes('→')) {
+      const arrowIdx = parts.indexOf('→');
+      if (arrowIdx !== -1) {
+        keyEndIdx = arrowIdx + 1;
+      }
+    }
+
+    const name = parts.slice(0, keyEndIdx + 1).join(' ');
+    const rest = parts.slice(keyEndIdx + 1);
+
+    if (rest.length < 6) continue;
+
+    const cmds = parseInt(rest[0]) || 0;
+    const input = parseRtkVal(rest[1]);
+    const output = parseRtkVal(rest[2]);
+    const saved = parseRtkVal(rest[3]);
+    const pct = parseFloat(rest[4]) || 0;
+    const time = parseInt(rest[5]) || 0;
+
+    const row = {
+      commands: cmds,
+      input_tokens: input,
+      output_tokens: output,
+      saved_tokens: saved,
+      savings_pct: pct,
+      total_time_ms: cmds * time,
+      avg_time_ms: time
+    };
+
+    if (currentSection === 'daily') {
+      row.date = name;
+      daily.push(row);
+    } else if (currentSection === 'weekly') {
+      row.week_start = name.split(' ')[0];
+      row.week_end = name.split(' ').pop();
+      weekly.push(row);
+    } else if (currentSection === 'monthly') {
+      row.month = name;
+      monthly.push(row);
+    }
+  }
+
+  return { summary, daily, weekly, monthly };
+}
+
 async function collectRTK() {
   const homes = rtkDataHomes();
   // No DB found in any candidate → let rtk pick its own default.
   const envs = homes.length ? homes.map(h => ({ XDG_DATA_HOME: h })) : [{}];
 
   const results = (await Promise.all(
-    envs.map(env => execPromise('rtk gain -f json -a', env).then(o => {
-      try { return JSON.parse(o); } catch { return null; }
+    envs.map(env => execPromise('rtk gain -g -a', env).then(o => {
+      if (!o) return null;
+      try {
+        return JSON.parse(o);
+      } catch {
+        return parseTextRTK(o);
+      }
     }))
   )).filter(Boolean);
 
@@ -189,7 +303,7 @@ async function collectCaveman() {
         const key = e.session_id || `_${latest.size}`;
         const prev = latest.get(key);
         if (!prev || (e.ts || 0) >= (prev.ts || 0)) latest.set(key, e);
-      } catch {}
+      } catch { }
     }
   }
 
@@ -201,8 +315,10 @@ async function collectCaveman() {
     totalSavedUsd += e.est_saved_usd || 0;
   }
 
-  return { mode, session_count: sessions.length, total_output_tokens: totalOutputTokens,
-    total_saved_tokens: totalSavedTokens, total_saved_usd: totalSavedUsd, sessions };
+  return {
+    mode, session_count: sessions.length, total_output_tokens: totalOutputTokens,
+    total_saved_tokens: totalSavedTokens, total_saved_usd: totalSavedUsd, sessions
+  };
 }
 
 async function collectHeadroom() {

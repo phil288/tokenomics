@@ -6,11 +6,7 @@ per-model raw / real / saved **cost** tracking, and light / dark / auto themes.
 
 Zero runtime dependencies (Node.js built-ins only). Charts via Chart.js CDN.
 
-> ⚠️ **Tested with Claude only.** Tokenomics has so far been built and tested against
-> Claude-based usage (Claude Code + Anthropic models). The cost math uses Claude
-> per-model pricing and cache ratios. Other LLM providers (OpenAI / Codex, Gemini,
-> etc.) are **not** yet supported. If you'd like to use another provider, contributions
-> are very welcome — see [Contributing](#contributing).
+> ⚠️ **Supported Models.** Tokenomics supports Claude models (Anthropic), Gemini / Antigravity models (Google), and Cursor models. The cost math uses model-specific pricing and cache ratios. Other LLM providers (OpenAI / Codex, etc.) are **not** yet supported. If you'd like to use another provider, contributions are very welcome — see [Contributing](#contributing).
 
 ## Prerequisites
 
@@ -18,7 +14,7 @@ Tokenomics **reads the output** of three tools you install separately:
 
 | Tool | Reads | Install |
 |------|-------|---------|
-| RTK (Rust Token Killer) | `rtk gain -f json -a` | https://github.com/rtk-ai/rtk |
+| RTK (Rust Token Killer) | `rtk gain -g -a` | https://github.com/rtk-ai/rtk |
 | Headroom | `~/.headroom/subscription_state.json` | `pipx install headroom-ai` |
 | Caveman | `~/.claude/.caveman-active` + `.caveman-history.jsonl` | Claude Code plugin |
 
@@ -108,7 +104,7 @@ Set via environment variables (e.g. in the systemd unit or your shell):
 > launchers set `XDG_DATA_HOME` differently (a VSCode *snap* uses
 > `~/snap/code/<rev>/.local/share`, a plain service has none → `~/.local/share`). So your
 > usage can be split across several `history.db` files. Tokenomics finds **every** RTK
-> database (deduped by real path), runs `rtk gain -a` against each, and **merges** the
+> database (deduped by real path), runs `rtk gain -g -a` against each, and **merges** the
 > totals and daily/weekly/monthly breakdowns — so no project or launcher is missed. Set
 > `RTK_DATA_HOME` to pin a single location instead.
 
@@ -116,7 +112,7 @@ Set via environment variables (e.g. in the systemd unit or your shell):
 
 | Card | Source |
 |------|--------|
-| RTK | `rtk gain -f json -a`, merged across all discovered `history.db` files |
+| RTK | `rtk gain -g -a`, merged across all discovered `history.db` files |
 | Caveman | `~/.claude/.caveman-active` + `~/.claude/.caveman-history.jsonl` (latest per session) |
 | Headroom | `~/.headroom/subscription_state.json` |
 
