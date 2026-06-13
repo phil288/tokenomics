@@ -51,7 +51,7 @@ function saveSettings() {
 function getSettings() {
   return {
     ...settings,
-    CURSOR_ACCESS_TOKEN: settings.CURSOR_ACCESS_TOKEN ? '********' : ''
+    CURSOR_ACCESS_TOKEN: settings.CURSOR_ACCESS_TOKEN || ''
   };
 }
 
@@ -61,7 +61,7 @@ function updateSettings(parsed) {
   } else if (parsed.CURSOR_ENABLED !== undefined) {
     settings.CURSOR_ENABLED = parsed.CURSOR_ENABLED === 'true' || parsed.CURSOR_ENABLED === 1;
   }
-  if (parsed.CURSOR_ACCESS_TOKEN !== undefined && parsed.CURSOR_ACCESS_TOKEN !== '********') {
+  if (parsed.CURSOR_ACCESS_TOKEN !== undefined) {
     settings.CURSOR_ACCESS_TOKEN = parsed.CURSOR_ACCESS_TOKEN.trim();
   }
   if (parsed.RTK_DATA_HOME !== undefined) {

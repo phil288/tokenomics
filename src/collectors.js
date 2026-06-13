@@ -289,6 +289,7 @@ async function collectCursor() {
 
   if (!token) return { error: 'no token found' };
 
+
   try {
     const res = await fetch('https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage', {
       method: 'POST',
@@ -298,11 +299,15 @@ async function collectCursor() {
       },
       body: '{}'
     });
-
     if (res.status !== 200) {
-      return { error: `API returned status ${res.status}` };
+      const errText = await res.text().catch(() => '');
+      let msg = `API returned status ${res.status}`;
+      try {
+        const parsed = JSON.parse(errText);
+        if (parsed.message) msg = parsed.message;
+      } catch {}
+      return { error: msg };
     }
-
     const data = await res.json();
     return data;
   } catch (e) {

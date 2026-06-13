@@ -46,6 +46,24 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500);
       res.end('index.html not found');
     }
+  } else if (req.url === '/index.css') {
+    try {
+      const css = fs.readFileSync(path.join(__dirname, 'index.css'));
+      res.writeHead(200, { 'Content-Type': 'text/css' });
+      res.end(css);
+    } catch (err) {
+      res.writeHead(404);
+      res.end('index.css not found');
+    }
+  } else if (req.url === '/app.js') {
+    try {
+      const js = fs.readFileSync(path.join(__dirname, 'app.js'));
+      res.writeHead(200, { 'Content-Type': 'application/javascript' });
+      res.end(js);
+    } catch (err) {
+      res.writeHead(404);
+      res.end('app.js not found');
+    }
   } else if (req.url === '/api/stats') {
     const stats = await collectStats();
     res.writeHead(200, { 'Content-Type': 'application/json' });

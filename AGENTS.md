@@ -11,7 +11,7 @@ Welcome! This document is designed for AI coding agents (such as Claude Code, An
 - **Caveman**: Ultra-compressed Claude Code communication mode.
 - **Headroom**: Context optimization layer and proxy.
 
-The application is structured as a **single-file backend** (`server.js`) and a **single-file frontend** (`index.html`), keeping the codebase extremely lean, fast, and easy to modify.
+The application is structured as a **single-file backend** (`server.js`) and a **modular frontend** (`index.html`, `index.css`, `app.js`), keeping the codebase extremely lean, fast, and easy to modify.
 
 ---
 
@@ -23,8 +23,11 @@ The application is structured as a **single-file backend** (`server.js`) and a *
   - Spawns subprocesses and reads files on a timer (`REFRESH_MS`, default: `10000`) to collect tool data.
   - Records compact snapshots of historical data to `data/history.jsonl` every minute (`HISTORY_INTERVAL_MS`, default: `60000`), capped at `HISTORY_MAX` (default: `5000`) entries.
 - **`index.html`**:
-  - The client dashboard.
-  - Built with **Vanilla HTML and CSS** using a highly customized, clean theme stylesheet with dark, light, and automatic theme support.
+  - The HTML layout structure. Links to `/index.css` and `/app.js`.
+- **`index.css`**:
+  - The styling system with a customized, clean theme stylesheet with dark, light, and automatic theme support.
+- **`app.js`**:
+  - The client-side dashboard logic.
   - Subscribes to the `/api/events` SSE stream to receive live data updates.
   - Renders time-series trends (tokens saved, cost over time, quota utilization) using the **Chart.js** library loaded from a CDN.
 - **`data/`** (gitignored):
@@ -42,9 +45,9 @@ The project prides itself on having **zero runtime dependencies** (other than No
 - All web operations, routing, SSE streaming, child process orchestration, and file reads must continue to use Node.js standard library APIs (`http`, `fs`, `path`, `child_process`, `os`).
 
 ### 🔄 Keep Cost & Model Lists in Sync
-Both `server.js` and `index.html` define pricing matrices for Claude, Gemini/Antigravity, and Cursor models:
+Both `server.js` and `app.js` define pricing matrices for Claude, Gemini/Antigravity, and Cursor models:
 - In `server.js`: `const PRICING` array defines model prefixes and token costs / cache multiplier values.
-- In `index.html`: `const PRICING` array handles the representation on the client side.
+- In `app.js`: `const PRICING` array handles the representation on the client side.
 - **If you add a new model or update pricing, you must modify BOTH files to keep them perfectly in sync.**
 
 ### 🎨 Design & Visual Excellence
@@ -83,7 +86,7 @@ Understanding how each source is resolved is crucial for debugging:
   ```bash
   npm run dev
   ```
-- Frontend modifications (`index.html`) are served directly from the disk. **Simply edit the file and refresh your browser** to see the changes.
+- Frontend modifications (`index.html`, `index.css`, `app.js`) are served directly from the disk. **Simply edit the files and refresh your browser** to see the changes.
 
 ### Environment Variables
 For testing different scenarios, you can override settings:
