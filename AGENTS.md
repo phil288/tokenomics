@@ -70,6 +70,10 @@ Understanding how each source is resolved is crucial for debugging:
 ### 3. Headroom
 - Reads and parses `~/.headroom/subscription_state.json`.
 
+### 4. Cursor
+- Queries the Connect RPC endpoint `https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` to fetch account quotas and billing cycles.
+- Authenticates using the `cursorAuth/accessToken` JWT token extracted from Cursor's local SQLite store (`~/.config/Cursor/User/globalStorage/state.vscdb`) or the `CURSOR_ACCESS_TOKEN` environment variable.
+
 ---
 
 ## 5. Development & Verification Workflow

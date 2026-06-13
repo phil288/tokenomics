@@ -1,0 +1,324 @@
+const fs = require('fs');
+const path = require('path');
+const { exec } = require('child_process');
+const os = require('os');
+const { settings } = require('./settings');
+
+const HOME = process.env.HOME || os.homedir();
+const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
+
+const EXEC_PATH = [
+  path.join(HOME, '.local', 'bin'),
+  path.join(HOME, 'bin'),
+  '/usr/local/bin', '/usr/bin', '/bin',
+  process.env.PATH || '',
+].filter(Boolean).join(':');
+
+function execPromise(cmd, extraEnv = {}) {
+  return new Promise((resolve) => {
+    exec(cmd, { timeout: 10000, env: { ...process.env, PATH: EXEC_PATH, ...extraEnv } }, (err, stdout) => {
+      resolve(err ? null : stdout);
+    });
+  });
+}
+
+function readFile(filePath) {
+  return new Promise((resolve) => {
+    fs.readFile(filePath, 'utf8', (err, data) => resolve(err ? null : data));
+  });
+}
+
+function listSnapShareDirs() {
+  const dirs = [];
+  const snapCode = path.join(HOME, 'snap', 'code');
+  try {
+    for (const rev of fs.readdirSync(snapCode)) {
+      dirs.push(path.join(snapCode, rev, '.local', 'share'));
+    }
+  } catch { }
+  return dirs;
+}
+
+function rtkDataHomes() {
+  const customHome = settings.RTK_DATA_HOME || process.env.RTK_DATA_HOME;
+  if (customHome) return [customHome];
+  const candidates = [
+    process.env.XDG_DATA_HOME,
+    path.join(HOME, '.local', 'share'),
+    ...listSnapShareDirs(),
+  ].filter(Boolean);
+
+  const seen = new Set(), homes = [];
+  for (const share of candidates) {
+    try {
+      const real = fs.realpathSync(path.join(share, 'rtk', 'history.db'));
+      if (!seen.has(real)) { seen.add(real); homes.push(share); }
+    } catch { }
+  }
+  return homes;
+}
+
+function mergeRTK(list) {
+  const sum = { total_commands: 0, total_input: 0, total_output: 0, total_saved: 0, total_time_ms: 0 };
+  const byKey = { daily: new Map(), weekly: new Map(), monthly: new Map() };
+  const keyOf = { daily: r => r.date, weekly: r => r.week_start, monthly: r => r.month };
+
+  for (const g of list) {
+    const s = g.summary || {};
+    sum.total_commands += s.total_commands || 0;
+    sum.total_input += s.total_input || 0;
+    sum.total_output += s.total_output || 0;
+    sum.total_saved += s.total_saved || 0;
+    sum.total_time_ms += s.total_time_ms || 0;
+    for (const period of ['daily', 'weekly', 'monthly']) {
+      for (const r of g[period] || []) {
+        const k = keyOf[period](r);
+        const m = byKey[period];
+        const cur = m.get(k) || { ...r, commands: 0, input_tokens: 0, output_tokens: 0, saved_tokens: 0, total_time_ms: 0 };
+        cur.commands += r.commands || 0;
+        cur.input_tokens += r.input_tokens || 0;
+        cur.output_tokens += r.output_tokens || 0;
+        cur.saved_tokens += r.saved_tokens || 0;
+        cur.total_time_ms += r.total_time_ms || 0;
+        m.set(k, cur);
+      }
+    }
+  }
+
+  const pct = (saved, input) => input ? (saved / input) * 100 : 0;
+  const finalizePeriod = (m, dateKey) => [...m.values()]
+    .map(r => ({
+      ...r, savings_pct: pct(r.saved_tokens, r.input_tokens),
+      avg_time_ms: r.commands ? Math.round(r.total_time_ms / r.commands) : 0
+    }))
+    .sort((a, b) => String(a[dateKey]).localeCompare(String(b[dateKey])));
+
+  return {
+    summary: {
+      ...sum,
+      avg_savings_pct: pct(sum.total_saved, sum.total_input),
+      avg_time_ms: sum.total_commands ? Math.round(sum.total_time_ms / sum.total_commands) : 0,
+    },
+    daily: finalizePeriod(byKey.daily, 'date'),
+    weekly: finalizePeriod(byKey.weekly, 'week_start'),
+    monthly: finalizePeriod(byKey.monthly, 'month'),
+    sources: list.length,
+  };
+}
+
+function parseRtkVal(str) {
+  str = str.trim().toUpperCase();
+  if (str.endsWith('K')) return parseFloat(str) * 1000;
+  if (str.endsWith('M')) return parseFloat(str) * 1000000;
+  if (str.endsWith('B')) return parseFloat(str) * 1000000000;
+  return parseFloat(str) || 0;
+}
+
+function parseTextRTK(text) {
+  const lines = text.split('\n');
+  const summary = { total_commands: 0, total_input: 0, total_output: 0, total_saved: 0, total_time_ms: 0, avg_savings_pct: 0, avg_time_ms: 0 };
+  const daily = [];
+  const weekly = [];
+  const monthly = [];
+
+  let currentSection = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith('D Daily Breakdown')) {
+      currentSection = 'daily';
+      continue;
+    } else if (trimmed.startsWith('W Weekly Breakdown')) {
+      currentSection = 'weekly';
+      continue;
+    } else if (trimmed.startsWith('M Monthly Breakdown')) {
+      currentSection = 'monthly';
+      continue;
+    }
+
+    if (trimmed.startsWith('Date') || trimmed.startsWith('Week') || trimmed.startsWith('Month') || trimmed.startsWith('──') || trimmed.startsWith('══')) {
+      continue;
+    }
+
+    const parts = trimmed.split(/\s+/);
+    if (parts.length < 7) continue;
+
+    const key = parts[0];
+    if (key === 'TOTAL') {
+      if (currentSection === 'daily') {
+        summary.total_commands = parseInt(parts[1]) || 0;
+        summary.total_input = parseRtkVal(parts[2]);
+        summary.total_output = parseRtkVal(parts[3]);
+        summary.total_saved = parseRtkVal(parts[4]);
+        summary.avg_savings_pct = parseFloat(parts[5]) || 0;
+        summary.total_time_ms = (parseInt(parts[1]) || 0) * (parseInt(parts[6]) || 0);
+        summary.avg_time_ms = parseInt(parts[6]) || 0;
+      }
+      continue;
+    }
+
+    let keyEndIdx = 0;
+    if (trimmed.includes('→')) {
+      const arrowIdx = parts.indexOf('→');
+      if (arrowIdx !== -1) {
+        keyEndIdx = arrowIdx + 1;
+      }
+    }
+
+    const name = parts.slice(0, keyEndIdx + 1).join(' ');
+    const rest = parts.slice(keyEndIdx + 1);
+
+    if (rest.length < 6) continue;
+
+    const cmds = parseInt(rest[0]) || 0;
+    const input = parseRtkVal(rest[1]);
+    const output = parseRtkVal(rest[2]);
+    const saved = parseRtkVal(rest[3]);
+    const pct = parseFloat(rest[4]) || 0;
+    const time = parseInt(rest[5]) || 0;
+
+    const row = {
+      commands: cmds,
+      input_tokens: input,
+      output_tokens: output,
+      saved_tokens: saved,
+      savings_pct: pct,
+      total_time_ms: cmds * time,
+      avg_time_ms: time
+    };
+
+    if (currentSection === 'daily') {
+      row.date = name;
+      daily.push(row);
+    } else if (currentSection === 'weekly') {
+      row.week_start = name.split(' ')[0];
+      row.week_end = name.split(' ').pop();
+      weekly.push(row);
+    } else if (currentSection === 'monthly') {
+      row.month = name;
+      monthly.push(row);
+    }
+  }
+
+  return { summary, daily, weekly, monthly };
+}
+
+async function collectRTK() {
+  const homes = rtkDataHomes();
+  const envs = homes.length ? homes.map(h => ({ XDG_DATA_HOME: h })) : [{}];
+
+  const results = (await Promise.all(
+    envs.map(env => execPromise('rtk gain -g -a', env).then(o => {
+      if (!o) return null;
+      try {
+        return JSON.parse(o);
+      } catch {
+        return parseTextRTK(o);
+      }
+    }))
+  )).filter(Boolean);
+
+  if (!results.length) return { error: 'no data' };
+  return results.length === 1 ? results[0] : mergeRTK(results);
+}
+
+async function collectCaveman() {
+  const [modeRaw, historyRaw] = await Promise.all([
+    readFile(path.join(HOME, '.claude', '.caveman-active')),
+    readFile(path.join(HOME, '.claude', '.caveman-history.jsonl')),
+  ]);
+
+  const mode = (modeRaw || 'unknown').trim();
+
+  const latest = new Map();
+  if (historyRaw) {
+    for (const line of historyRaw.split('\n').filter(l => l.trim())) {
+      try {
+        const e = JSON.parse(line);
+        const key = e.session_id || `_${latest.size}`;
+        const prev = latest.get(key);
+        if (!prev || (e.ts || 0) >= (prev.ts || 0)) latest.set(key, e);
+      } catch { }
+    }
+  }
+
+  const sessions = [...latest.values()];
+  let totalOutputTokens = 0, totalSavedTokens = 0, totalSavedUsd = 0;
+  for (const e of sessions) {
+    totalOutputTokens += e.output_tokens || 0;
+    totalSavedTokens += e.est_saved_tokens || 0;
+    totalSavedUsd += e.est_saved_usd || 0;
+  }
+
+  return {
+    mode, session_count: sessions.length, total_output_tokens: totalOutputTokens,
+    total_saved_tokens: totalSavedTokens, total_saved_usd: totalSavedUsd, sessions
+  };
+}
+
+async function collectHeadroom() {
+  const filePath = settings.HEADROOM_SAVINGS_PATH || path.join(HOME, '.headroom', 'subscription_state.json');
+  const raw = await readFile(filePath);
+  if (!raw) return { error: 'no data' };
+  try { return JSON.parse(raw); } catch { return { error: 'parse error' }; }
+}
+
+async function collectCursor() {
+  if (settings.CURSOR_ENABLED === false) {
+    return { disabled: true };
+  }
+  let token = settings.CURSOR_ACCESS_TOKEN || process.env.CURSOR_ACCESS_TOKEN;
+
+  if (!token) {
+    try {
+      const dbPath = path.join(HOME, '.config', 'Cursor', 'User', 'globalStorage', 'state.vscdb');
+      if (fs.existsSync(dbPath)) {
+        const { DatabaseSync } = require('node:sqlite');
+        const db = new DatabaseSync(dbPath);
+        const row = db.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'").get();
+        if (row && row.value) {
+          token = row.value;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to read Cursor token from DB:', e.message);
+    }
+  }
+
+  if (!token) return { error: 'no token found' };
+
+  try {
+    const res = await fetch('https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: '{}'
+    });
+
+    if (res.status !== 200) {
+      return { error: `API returned status ${res.status}` };
+    }
+
+    const data = await res.json();
+    return data;
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function collectStats() {
+  const [rtk, caveman, headroom, cursor] = await Promise.all([collectRTK(), collectCaveman(), collectHeadroom(), collectCursor()]);
+  return { rtk, caveman, headroom, cursor, timestamp: new Date().toISOString(), refresh_ms: REFRESH_MS };
+}
+
+module.exports = {
+  collectRTK,
+  collectCaveman,
+  collectHeadroom,
+  collectCursor,
+  collectStats
+};
