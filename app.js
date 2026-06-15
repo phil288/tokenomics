@@ -532,6 +532,24 @@ function drawRTKChart(daily) {
     rtkChart.update('none');
     return;
   }
+  const barLabels = {
+    id: 'rtkBarLabels',
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      const meta = chart.getDatasetMeta(0);
+      ctx.save();
+      ctx.fillStyle = tc('muted');
+      ctx.font = '600 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      meta.data.forEach((bar, i) => {
+        const v = chart.data.datasets[0].data[i];
+        if (!v) return;
+        ctx.fillText(ht(v), bar.x, bar.y - 2);
+      });
+      ctx.restore();
+    },
+  };
   rtkChart = new Chart(canvas.getContext('2d'), {
     type: 'bar',
     data: {
@@ -544,9 +562,11 @@ function drawRTKChart(daily) {
         borderRadius: 2,
       }],
     },
+    plugins: [barLabels],
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 14 } },
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: { label: c => ` ${ht(c.raw)} saved` } },
