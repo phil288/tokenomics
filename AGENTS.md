@@ -180,6 +180,12 @@ The application is structured as a **single-file backend** (`server.js`) and a *
 
 When modifying or expanding Tokenomics, agents **must** adhere to the following rules:
 
+### 🛑 Prefix Every Command with `rtk` (NON-NEGOTIABLE)
+**Every command line you run MUST start with `rtk`** — no exceptions. This is a hard requirement, not a suggestion (see the [Golden Rule](#golden-rule-non-negotiable) at the top of this file).
+- Applies to **every** command, including each segment of a chain (`&&`, `||`, `|`).
+- Applies even to commands RTK has no dedicated filter for — it passes them through unchanged, so `rtk` is **always safe**.
+- No "this one is read-only/simple, I'll skip it." Still prefix it. Omitting `rtk` leaks tokens for zero benefit.
+
 ### 🚫 Zero External Runtime Dependencies
 The project prides itself on having **zero runtime dependencies** (other than Node.js built-ins).
 - **Do NOT** add standard npm dependencies (e.g., `express`, `dotenv`, `axios`, `cors`) to `package.json`.

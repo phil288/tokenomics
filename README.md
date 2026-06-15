@@ -1,10 +1,32 @@
 # Tokenomics
 
+**See exactly how many tokens — and how much money — your AI tooling saves you. In real time.**
+
 Real-time browser dashboard for [RTK](https://github.com/rtk-ai/rtk), Caveman, and
 Headroom token-savings stats — live updates over SSE, time-series history graphs,
 per-model raw / real / saved **cost** tracking, and light / dark / auto themes.
 
 Zero runtime dependencies (Node.js built-ins only). Charts via Chart.js CDN.
+
+![Tokenomics dashboard](assets/dashboard.png)
+
+> *Above: 189.83M tokens saved across RTK · Caveman · Headroom cache — live cost
+> tracking, quota burn-down, and time-series trends, all on one screen.*
+
+## Why Tokenomics
+
+- 📊 **One screen, every tool.** RTK, Caveman, and Headroom savings merged into a
+  single live view — no more checking three CLIs.
+- 💸 **Real dollars, not just tokens.** Per-model **raw → real → saved** cost math
+  with proper Claude cache ratios shows what caching actually saves you.
+- ⚡ **Live over SSE.** Numbers tick up as you work — sub-second push, animated
+  progress bars, "last used" freshness on every card.
+- 📈 **History that sticks.** Compact 60s snapshots feed selectable 1h / 6h / 24h /
+  all trend graphs for tokens saved and cost over time.
+- 🪶 **Featherweight.** Zero runtime dependencies, single-file backend, instant
+  frontend reloads. Runs anywhere Node ≥ 18 does.
+- 🎯 **Quota-aware.** Claude session + weekly quota burn-down (via Headroom) and
+  Cursor period usage, so you see limits before you hit them.
 
 > ⚠️ **Supported Models.** Tokenomics supports Claude models (Anthropic), Gemini / Antigravity models (Google), and Cursor models. The cost math uses model-specific pricing and cache ratios. Other LLM providers (OpenAI / Codex, etc.) are **not** yet supported. If you'd like to use another provider, contributions are very welcome — see [Contributing](#contributing).
 
