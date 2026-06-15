@@ -315,9 +315,98 @@ async function collectCursor() {
   }
 }
 
+// ---- "last used" timestamps per tool ----
+// RTK: newest row in any active history.db. Caveman/Claude: newest entry in
+// their respective JSONL history logs. Returns ISO strings (or null when no data).
+
+function maxRtkLastUsed() {
+  let DatabaseSync;
+  try { ({ DatabaseSync } = require('node:sqlite')); } catch { return null; }
+
+  let max = null;
+  for (const home of rtkDataHomes()) {
+    const dbPath = path.join(home, 'rtk', 'history.db');
+    try {
+      if (!fs.existsSync(dbPath)) continue;
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      const row = db.prepare('SELECT MAX(timestamp) AS ts FROM commands').get();
+      db.close();
+      if (row && row.ts) {
+        const t = Date.parse(row.ts);
+        if (!Number.isNaN(t) && (max === null || t > max)) max = t;
+      }
+    } catch { }
+  }
+  return max === null ? null : new Date(max).toISOString();
+}
+
+function fileMtimeISO(filePath) {
+  try { return fs.statSync(filePath).mtime.toISOString(); } catch { return null; }
+}
+
+function maxIso(...isos) {
+  let max = null;
+  for (const iso of isos) {
+    if (!iso) continue;
+    const t = Date.parse(iso);
+    if (!Number.isNaN(t) && (max === null || t > max)) max = t;
+  }
+  return max === null ? null : new Date(max).toISOString();
+}
+
+async function maxJsonlLastUsed(filePath, tsField) {
+  const raw = await readFile(filePath);
+  if (!raw) return null;
+  let max = null;
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const e = JSON.parse(trimmed);
+      const ts = e[tsField];
+      if (typeof ts === 'number' && (max === null || ts > max)) max = ts;
+    } catch { }
+  }
+  return max === null ? null : new Date(max).toISOString();
+}
+
+// Headroom "last used" = last proxied request (last_active_at) or most recent
+// quota poll (latest.polled_at); falls back to the state file's mtime, which is
+// rewritten on every poll/cache update.
+function headroomLastUsed(headroom) {
+  const candidate = (headroom && !headroom.error)
+    ? (headroom.last_active_at || (headroom.latest && headroom.latest.polled_at))
+    : null;
+  const statePath = settings.HEADROOM_SAVINGS_PATH || path.join(HOME, '.headroom', 'subscription_state.json');
+  return maxIso(candidate, fileMtimeISO(statePath));
+}
+
+// Caveman writes its JSONL log only at session end, so it lags during an active
+// session. The .caveman-active / statusline files are touched live, so take the
+// most recent signal across all three.
+async function cavemanLastUsed() {
+  const histTs = await maxJsonlLastUsed(path.join(HOME, '.claude', '.caveman-history.jsonl'), 'ts');
+  return maxIso(
+    histTs,
+    fileMtimeISO(path.join(HOME, '.claude', '.caveman-active')),
+    fileMtimeISO(path.join(HOME, '.claude', '.caveman-statusline-suffix')),
+  );
+}
+
+async function collectLastUsed(headroom) {
+  const [caveman, claude] = await Promise.all([
+    cavemanLastUsed(),
+    maxJsonlLastUsed(path.join(HOME, '.claude', 'history.jsonl'), 'timestamp'),
+  ]);
+  return { rtk: maxRtkLastUsed(), caveman, claude, headroom: headroomLastUsed(headroom) };
+}
+
 async function collectStats() {
-  const [rtk, caveman, headroom, cursor] = await Promise.all([collectRTK(), collectCaveman(), collectHeadroom(), collectCursor()]);
-  return { rtk, caveman, headroom, cursor, timestamp: new Date().toISOString(), refresh_ms: REFRESH_MS };
+  const [rtk, caveman, headroom, cursor] = await Promise.all([
+    collectRTK(), collectCaveman(), collectHeadroom(), collectCursor()
+  ]);
+  const lastUsed = await collectLastUsed(headroom);
+  return { rtk, caveman, headroom, cursor, last_used: lastUsed, timestamp: new Date().toISOString(), refresh_ms: REFRESH_MS };
 }
 
 module.exports = {
@@ -325,5 +414,6 @@ module.exports = {
   collectCaveman,
   collectHeadroom,
   collectCursor,
+  collectLastUsed,
   collectStats
 };

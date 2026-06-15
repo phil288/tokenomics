@@ -49,6 +49,29 @@ function ht(n) {
   return String(n);
 }
 function pct(n) { return (n === null || n === undefined) ? '—' : n.toFixed(1) + '%'; }
+// compact relative time, e.g. "3m ago" / "2h ago" / "5d ago". Returns 'never' when no data.
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return 'never';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 45) return 'just now';
+  if (s < 90) return '1m ago';
+  const m = s / 60;
+  if (m < 60) return Math.round(m) + 'm ago';
+  const h = m / 60;
+  if (h < 24) return Math.round(h) + 'h ago';
+  const d = h / 24;
+  if (d < 7) return Math.round(d) + 'd ago';
+  if (d < 30) return Math.round(d / 7) + 'w ago';
+  if (d < 365) return Math.round(d / 30) + 'mo ago';
+  return Math.round(d / 365) + 'y ago';
+}
+// "Last used" row with absolute timestamp on hover.
+function lastUsedRow(iso) {
+  const title = iso ? new Date(iso).toLocaleString() : 'no recorded activity';
+  return `<div class="row"><span class="row-label">Last used</span><span class="row-val" title="${title}">${timeAgo(iso)}</span></div>`;
+}
 function usd(n) { return (n === null || n === undefined) ? '—' : '$' + n.toFixed(4); }
 function usdFull(n) {
   if (n === null || n === undefined) return '—';
@@ -171,7 +194,7 @@ function renderModels(byModel) {
   `;
 }
 
-function renderRTK(d) {
+function renderRTK(d, lastUsed) {
   if (!d || d.error) return '<div class="err">No RTK data</div>';
   const s = d.summary || {};
   return `
@@ -183,11 +206,12 @@ function renderRTK(d) {
       <div class="row"><span class="row-label">Tokens out</span><span class="row-val">${ht(s.total_output || 0)}</span></div>
       <div class="row"><span class="row-label">Avg savings</span><span class="row-val" style="color:var(--rtk)">${pct(s.avg_savings_pct)}</span></div>
       <div class="row"><span class="row-label">Avg exec time</span><span class="row-val">${s.avg_time_ms || 0} ms</span></div>
+      ${lastUsedRow(lastUsed)}
     </div>
   `;
 }
 
-function renderCav(d) {
+function renderCav(d, lastUsed) {
   if (!d) return '<div class="err">No Caveman data</div>';
   const mode = d.mode || 'unknown';
   const col = MODE_COLORS[mode] || '#8b949e';
@@ -199,6 +223,7 @@ function renderCav(d) {
       <div class="row"><span class="row-label">Sessions logged</span><span class="row-val">${d.session_count || 0}</span></div>
       <div class="row"><span class="row-label">Output tokens</span><span class="row-val">${ht(d.total_output_tokens || 0)}</span></div>
       <div class="row"><span class="row-label">Est. USD saved</span><span class="row-val" style="color:var(--caveman)">${usd(d.total_saved_usd || 0)}</span></div>
+      ${lastUsedRow(lastUsed)}
     </div>
   `;
 }
@@ -382,45 +407,48 @@ function renderCursor(d) {
   `;
 }
 
-function renderHdr(d) {
-  if (!d || d.error) return '<div class="err">No Headroom data</div>';
+// quota % can be a small fraction (e.g. 0.4%); never round a nonzero value down
+// to 0 — show at least 1% so "in use" is visible (matches Claude's own display).
+function qpct(p) { return p > 0 ? Math.max(1, Math.round(p)) : 0; }
+
+function quotaBar(label, pct, resetSecs) {
+  const v = pct || 0;
+  return `
+    <div class="prog-group">
+      <div class="prog-header">
+        <span class="prog-label">${label}</span>
+        <span class="prog-pct" style="color:${barColor(v)}">${qpct(v)}%</span>
+      </div>
+      <div class="track"><div class="fill" style="width:${Math.min(v, 100)}%;background:${barColor(v)}"></div></div>
+      ${resetSecs != null ? `<div class="prog-sub">${countdown(resetSecs)}</div>` : ''}
+    </div>`;
+}
+
+// Claude plan usage (session / weekly limits). Sourced from Headroom's poll of
+// the Claude quota API, but it's Claude's data — shown in its own card.
+function renderClaude(d, lastUsed) {
+  if (!d || d.error) return '<div class="err">No Claude quota data</div>';
   const lt = d.latest || {};
   const fh = lt.five_hour || {};
   const sd = lt.seven_day || {};
   const ss = lt.seven_day_sonnet || {};
+  const have = (fh.utilization_pct != null) || (sd.utilization_pct != null) || (ss.utilization_pct != null);
+  if (!have) return '<div class="err">Claude quota unavailable (Headroom hasn\'t polled yet)</div>';
+  return `
+    ${quotaBar('Current session (5h)', fh.utilization_pct, fh.seconds_to_reset)}
+    ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, sd.seconds_to_reset)}
+    ${quotaBar('Weekly · Sonnet (7d)', ss.utilization_pct, ss.seconds_to_reset)}
+    <div class="rows" style="margin-top:10px">${lastUsedRow(lastUsed)}</div>
+  `;
+}
+
+function renderHdr(d) {
+  if (!d || d.error) return '<div class="err">No Headroom data</div>';
   const wt = d.window_tokens || {};
   const contrib = d.contribution || {};
   const saved = contrib.tokens_saved || {};
 
-  const fhp = fh.utilization_pct || 0;
-  const sdp = sd.utilization_pct || 0;
-  const ssp = ss.utilization_pct || 0;
-
   return `
-    <div class="prog-group">
-      <div class="prog-header">
-        <span class="prog-label">5-hour quota</span>
-        <span class="prog-pct" style="color:${barColor(fhp)}">${fhp.toFixed(0)}%</span>
-      </div>
-      <div class="track"><div class="fill" style="width:${Math.min(fhp, 100)}%;background:${barColor(fhp)}"></div></div>
-      <div class="prog-sub">${countdown(fh.seconds_to_reset)}</div>
-    </div>
-    <div class="prog-group">
-      <div class="prog-header">
-        <span class="prog-label">7-day quota</span>
-        <span class="prog-pct" style="color:${barColor(sdp)}">${sdp.toFixed(0)}%</span>
-      </div>
-      <div class="track"><div class="fill" style="width:${Math.min(sdp, 100)}%;background:${barColor(sdp)}"></div></div>
-      <div class="prog-sub">${countdown(sd.seconds_to_reset)}</div>
-    </div>
-    <div class="prog-group">
-      <div class="prog-header">
-        <span class="prog-label">7-day Sonnet</span>
-        <span class="prog-pct" style="color:${barColor(ssp)}">${ssp.toFixed(0)}%</span>
-      </div>
-      <div class="track"><div class="fill" style="width:${Math.min(ssp, 100)}%;background:${barColor(ssp)}"></div></div>
-    </div>
-    <div class="divider"></div>
     <div class="token-grid">
       <div class="tcell">
         <div class="tcell-label">Input</div>
@@ -537,16 +565,19 @@ function renderHero(stats) {
   const hdrSaved = (stats.headroom && stats.headroom.window_tokens) ? cacheSavings(stats.headroom.window_tokens) : 0;
   const total = rtkSaved + cavSaved + hdrSaved;
 
+  const lu = stats.last_used || {};
+  const sub = (iso) => `<span class="chip-sub" title="${iso ? new Date(iso).toLocaleString() : 'no recorded activity'}">used ${timeAgo(iso)}</span>`;
+
   document.getElementById('hero-num').textContent = ht(total);
   document.getElementById('hero-chips').innerHTML = `
     <div class="chip" style="border-left-color:var(--rtk)">
-      <span class="chip-label">RTK</span><span class="chip-val" style="color:var(--rtk)">${ht(rtkSaved)}</span>
+      <span class="chip-label">RTK</span><span class="chip-val" style="color:var(--rtk)">${ht(rtkSaved)}</span>${sub(lu.rtk)}
     </div>
     <div class="chip" style="border-left-color:var(--caveman)">
-      <span class="chip-label">Caveman</span><span class="chip-val" style="color:var(--caveman)">${ht(cavSaved)}</span>
+      <span class="chip-label">Caveman</span><span class="chip-val" style="color:var(--caveman)">${ht(cavSaved)}</span>${sub(lu.caveman)}
     </div>
     <div class="chip" style="border-left-color:var(--headroom)">
-      <span class="chip-label">Headroom cache</span><span class="chip-val" style="color:var(--headroom)">${ht(hdrSaved)}</span>
+      <span class="chip-label">Headroom cache</span><span class="chip-val" style="color:var(--headroom)">${ht(hdrSaved)}</span>${sub(lu.headroom)}
     </div>`;
 }
 
@@ -555,8 +586,9 @@ let explainOpen = false;  // persists the raw-vs-weighted panel across refreshes
 function render(stats) {
   lastStats = stats;
   renderHero(stats);
-  document.getElementById('rtk').innerHTML = renderRTK(stats.rtk);
-  document.getElementById('cav').innerHTML = renderCav(stats.caveman);
+  const lu = stats.last_used || {};
+  document.getElementById('rtk').innerHTML = renderRTK(stats.rtk, lu.rtk);
+  document.getElementById('cav').innerHTML = renderCav(stats.caveman, lu.caveman);
 
   const cursorCard = document.getElementById('cursor-card');
   if (stats.cursor && stats.cursor.disabled) {
@@ -566,6 +598,9 @@ function render(stats) {
     const curEl = document.getElementById('cur');
     if (curEl) curEl.innerHTML = renderCursor(stats.cursor);
   }
+
+  const claudeEl = document.getElementById('claude');
+  if (claudeEl) claudeEl.innerHTML = renderClaude(stats.headroom, lu.claude);
 
   // skip rebuilding the Headroom card while the explainer is open — don't interrupt reading
   if (!explainOpen) {
@@ -639,7 +674,6 @@ let histData = [];
 let histRangeMin = 360; // default 6h
 try { const s = localStorage.getItem('ltm-range'); if (s !== null) histRangeMin = Number(s); } catch { }
 const histCharts = {};
-const MODEL_COLORS_HC = ['#58a6ff', '#d4a72c', '#3fb950', '#f97316', '#a78bfa', '#f85149'];
 
 function filterHist() {
   if (!histRangeMin) return histData;
@@ -680,9 +714,7 @@ function drawLine(id, labels, datasets, yfmt, tipfmt) {
 
 function renderHistory() {
   const rows = filterHist();
-  const empty = document.getElementById('hist-empty');
-  if (rows.length < 2) { empty.style.display = 'block'; return; }
-  empty.style.display = 'none';
+  if (rows.length < 2) return;
 
   const labels = rows.map(r => new Date(r.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   const ds = (data, color, label) => ({ label, data, borderColor: color, backgroundColor: color + '22', fill: false });
@@ -700,18 +732,6 @@ function renderHistory() {
     ds(rows.map(r => r.hr?.usd || 0), '#d4a72c', 'real'),
     ds(rows.map(r => r.hr?.saved || 0), '#3fb950', 'saved'),
   ], v => '$' + v.toFixed(0), c => ` ${c.dataset.label}: ${usdFull(c.raw)}`);
-
-  // 3. real cost by model
-  const modelNames = [...new Set(rows.flatMap(r => Object.keys(r.hr?.models || {})))];
-  drawLine('hc-models', labels, modelNames.map((name, i) =>
-    ds(rows.map(r => (r.hr?.models?.[name]?.usd) || 0), MODEL_COLORS_HC[i % MODEL_COLORS_HC.length], name)
-  ), v => '$' + v.toFixed(0), c => ` ${c.dataset.label}: ${usdFull(c.raw)}`);
-
-  // 4. quota
-  drawLine('hc-quota', labels, [
-    ds(rows.map(r => r.hr?.q5 || 0), '#58a6ff', '5-hour'),
-    ds(rows.map(r => r.hr?.q7 || 0), '#f97316', '7-day'),
-  ], v => v + '%', c => ` ${c.dataset.label}: ${c.raw}%`);
 }
 
 async function fetchHistory() {

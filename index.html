@@ -42,8 +42,15 @@
   </div>
 
   <div class="board">
-    <!-- LEFT: Headroom -->
+    <!-- LEFT: Claude quota + Headroom -->
     <div class="board-col">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Claude quota <span class="card-sub">via Headroom</span></span>
+          <div class="accent" style="background:var(--claude, #d97757)"></div>
+        </div>
+        <div id="claude"><span class="loading">…</span></div>
+      </div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Headroom</span>
@@ -99,24 +106,6 @@
       </div>
     </div>
   </div>
-
-  <section class="history">
-    <div class="hist-head">
-      <h2>History detail</h2>
-    </div>
-    <div class="hist-grid">
-      <div class="hist-card">
-        <div class="hist-title">Real cost by model <span>($)</span></div>
-        <div class="hist-canvas"><canvas id="hc-models"></canvas></div>
-      </div>
-      <div class="hist-card">
-        <div class="hist-title">Headroom quota <span>5h · 7d utilization %</span></div>
-        <div class="hist-canvas"><canvas id="hc-quota"></canvas></div>
-      </div>
-    </div>
-    <div class="hist-empty" id="hist-empty">Collecting history… charts appear after the first few snapshots (recorded
-      every 60s).</div>
-  </section>
 
   <!-- Settings Modal Overlay -->
   <div class="modal-overlay" id="settings-overlay">
