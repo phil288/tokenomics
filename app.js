@@ -314,45 +314,7 @@ function renderCursor(d) {
   const formatNum = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n;
 
   return `
-    <!-- Cursor Team Dashboard Usage Bars -->
-    <div class="prog-group" style="margin-bottom: 12px;">
-      <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
-        <span class="prog-label" style="font-weight: 500;">Total</span>
-        <span class="prog-pct" style="color:var(--cursor); font-weight: 700;">${Math.round(totalPct)}%</span>
-      </div>
-      <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
-        <div class="fill" style="width:${Math.min(totalPct, 100)}%; background: var(--cursor); height: 100%; border-radius: 3px;"></div>
-      </div>
-      <div class="prog-sub" style="font-size: 11px; margin-top: 4px; opacity: 0.8;">
-        ${Math.round(autoPct)}% Auto and ${Math.round(apiPct)}% API used
-      </div>
-    </div>
-
-    <div class="prog-group" style="margin-bottom: 12px;">
-      <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
-        <span class="prog-label" style="font-weight: 500;">Auto + Composer</span>
-        <span class="prog-pct" style="color:var(--cursor); font-weight: 700;">${Math.round(autoPct)}%</span>
-      </div>
-      <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
-        <div class="fill" style="width:${Math.min(autoPct, 100)}%; background: var(--cursor); height: 100%; border-radius: 3px;"></div>
-      </div>
-      <div class="prog-sub" style="font-size: 11px; margin-top: 4px; opacity: 0.6; line-height: 1.3;">
-        Additional usage beyond limits consumes API quota or on-demand spend.
-      </div>
-    </div>
-
-    <div class="prog-group" style="margin-bottom: 16px;">
-      <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
-        <span class="prog-label" style="font-weight: 500;">API</span>
-        <span class="prog-pct" style="color:var(--cursor); font-weight: 700;">${Math.round(apiPct)}%</span>
-      </div>
-      <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
-        <div class="fill" style="width:${Math.min(apiPct, 100)}%; background: var(--cursor); height: 100%; border-radius: 3px;"></div>
-      </div>
-      <div class="prog-sub" style="font-size: 11px; margin-top: 4px; opacity: 0.6; line-height: 1.3;">
-        Additional usage beyond limits consumes on-demand spend. Your plan includes at least $20 of API usage.
-      </div>
-    </div>
+    ${cursorBars(totalPct, autoPct, apiPct)}
 
     <div class="divider" style="margin: 12px 0 12px 0;"></div>
 
