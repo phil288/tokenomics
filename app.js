@@ -238,6 +238,33 @@ function renderCav(d, lastUsed) {
   `;
 }
 
+// One Cursor usage bar (Total / Auto+Composer / API). `sub` is {style, text}.
+// Shared by the individual (planUsage) and team dashboards.
+function cursorBar(label, pctVal, sub, mb = 12) {
+  return `
+      <div class="prog-group" style="margin-bottom: ${mb}px;">
+        <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
+          <span class="prog-label" style="font-weight: 500;">${label}</span>
+          <span class="prog-pct" style="color:var(--cursor); font-weight: 700;">${Math.round(pctVal)}%</span>
+        </div>
+        <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
+          <div class="fill" style="width:${Math.min(pctVal, 100)}%; background: var(--cursor); height: 100%; border-radius: 3px;"></div>
+        </div>
+        <div class="prog-sub" style="font-size: 11px; margin-top: 4px; ${sub.style}">${sub.text}</div>
+      </div>`;
+}
+const CURSOR_SUB_AUTO = { style: 'opacity: 0.6; line-height: 1.3;', text: 'Additional usage beyond limits consumes API quota or on-demand spend.' };
+const CURSOR_SUB_API = { style: 'opacity: 0.6; line-height: 1.3;', text: 'Additional usage beyond limits consumes on-demand spend. Your plan includes at least $20 of API usage.' };
+const cursorTotalSub = (autoPct, apiPct) => ({ style: 'opacity: 0.8;', text: `${Math.round(autoPct)}% Auto and ${Math.round(apiPct)}% API used` });
+
+// the three usage bars, identical between the individual and team dashboards
+function cursorBars(totalPct, autoPct, apiPct) {
+  return `
+      ${cursorBar('Total', totalPct, cursorTotalSub(autoPct, apiPct))}
+      ${cursorBar('Auto + Composer', autoPct, CURSOR_SUB_AUTO)}
+      ${cursorBar('API', apiPct, CURSOR_SUB_API, 16)}`;
+}
+
 function renderCursor(d) {
   if (!d || d.error) return `<div class="err">${d && d.error ? d.error : 'No Cursor data'}</div>`;
 
@@ -245,48 +272,7 @@ function renderCursor(d) {
     const autoPct = d.planUsage.autoPercentUsed || 0;
     const apiPct = d.planUsage.apiPercentUsed || 0;
     const totalPct = Math.max(autoPct, apiPct);
-
-    return `
-      <!-- Cursor Individual Dashboard Usage Bars -->
-      <div class="prog-group" style="margin-bottom: 12px;">
-        <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
-          <span class="prog-label" style="font-weight: 500;">Total</span>
-          <span class="prog-pct" style="color:var(--cursor); font-weight: 700;">${Math.round(totalPct)}%</span>
-        </div>
-        <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
-          <div class="fill" style="width:${Math.min(totalPct, 100)}%; background: var(--cursor); height: 100%; border-radius: 3px;"></div>
-        </div>
-        <div class="prog-sub" style="font-size: 11px; margin-top: 4px; opacity: 0.8;">
-          ${Math.round(autoPct)}% Auto and ${Math.round(apiPct)}% API used
-        </div>
-      </div>
-
-      <div class="prog-group" style="margin-bottom: 12px;">
-        <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
-          <span class="prog-label" style="font-weight: 500;">Auto + Composer</span>
-          <span class="prog-pct" style="color:var(--cursor); font-weight: 700;">${Math.round(autoPct)}%</span>
-        </div>
-        <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
-          <div class="fill" style="width:${Math.min(autoPct, 100)}%; background: var(--cursor); height: 100%; border-radius: 3px;"></div>
-        </div>
-        <div class="prog-sub" style="font-size: 11px; margin-top: 4px; opacity: 0.6; line-height: 1.3;">
-          Additional usage beyond limits consumes API quota or on-demand spend.
-        </div>
-      </div>
-
-      <div class="prog-group" style="margin-bottom: 16px;">
-        <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
-          <span class="prog-label" style="font-weight: 500;">API</span>
-          <span class="prog-pct" style="color:var(--cursor); font-weight: 700;">${Math.round(apiPct)}%</span>
-        </div>
-        <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
-          <div class="fill" style="width:${Math.min(apiPct, 100)}%; background: var(--cursor); height: 100%; border-radius: 3px;"></div>
-        </div>
-        <div class="prog-sub" style="font-size: 11px; margin-top: 4px; opacity: 0.6; line-height: 1.3;">
-          Additional usage beyond limits consumes on-demand spend. Your plan includes at least $20 of API usage.
-        </div>
-      </div>
-    `;
+    return cursorBars(totalPct, autoPct, apiPct);
   }
 
   const members = d.teamMemberSpend || (d.group && d.group.members) || [];
@@ -436,7 +422,7 @@ function quotaBar(label, pctVal, resetSecs) {
 
 // Claude plan usage (session / weekly limits). Sourced from Headroom's poll of
 // the Claude quota API, but it's Claude's data — shown in its own card.
-function renderClaude(d, lastUsed) {
+function renderClaude(d) {
   if (!d || d.error) return '<div class="err">No Claude quota data</div>';
   const lt = d.latest || {};
   const fh = lt.five_hour || {};
@@ -448,7 +434,6 @@ function renderClaude(d, lastUsed) {
     ${quotaBar('Current session (5h)', fh.utilization_pct, secsUntil(fh.resets_at))}
     ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, secsUntil(sd.resets_at))}
     ${quotaBar('Weekly · Sonnet (7d)', ss.utilization_pct, secsUntil(ss.resets_at))}
-    <div class="rows" style="margin-top:10px">${lastUsedRow(lastUsed)}</div>
   `;
 }
 
@@ -630,7 +615,7 @@ function render(stats) {
   }
 
   const claudeEl = document.getElementById('claude');
-  if (claudeEl) claudeEl.innerHTML = renderClaude(stats.headroom, lu.claude);
+  if (claudeEl) claudeEl.innerHTML = renderClaude(stats.headroom);
 
   // skip rebuilding the Headroom card while the explainer is open — don't interrupt reading
   if (!explainOpen) {
@@ -680,10 +665,7 @@ function clockTick() {
   if (!lastStats) return;
   renderHero(lastStats); // refreshes "used Xago" chips (no chart, safe to rebuild)
   const claudeEl = document.getElementById('claude');
-  if (claudeEl) {
-    const lu = lastStats.last_used || {};
-    claudeEl.innerHTML = renderClaude(lastStats.headroom, lu.claude);
-  }
+  if (claudeEl) claudeEl.innerHTML = renderClaude(lastStats.headroom);
 }
 // tick at the same cadence as the auto-refresh countdown (stats.refresh_ms)
 function startClock(refreshMs) {
