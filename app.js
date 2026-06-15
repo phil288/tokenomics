@@ -80,10 +80,20 @@ function usdFull(n) {
   return '$' + n.toFixed(4);
 }
 function countdown(secs) {
-  if (!secs) return '';
+  if (!secs || secs <= 0) return '';
   if (secs > 86400) return `resets in ${Math.floor(secs / 86400)}d ${Math.floor((secs % 86400) / 3600)}h`;
   if (secs > 3600) return `resets in ${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
   return `resets in ${Math.floor(secs / 60)}m`;
+}
+
+// Headroom stores seconds_to_reset frozen at poll time, so it goes stale
+// between polls. resets_at is an absolute timestamp — compute remaining live
+// against the clock so the countdown matches Claude's own display.
+function secsUntil(resetsAt) {
+  if (!resetsAt) return null;
+  const t = Date.parse(resetsAt);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.round((t - Date.now()) / 1000));
 }
 function barColor(p) {
   return p > 80 ? '#f85149' : p > 60 ? '#d29922' : '#3fb950';
@@ -230,7 +240,7 @@ function renderCav(d, lastUsed) {
 
 function renderCursor(d) {
   if (!d || d.error) return `<div class="err">${d && d.error ? d.error : 'No Cursor data'}</div>`;
-  
+
   if (d.planUsage) {
     const autoPct = d.planUsage.autoPercentUsed || 0;
     const apiPct = d.planUsage.apiPercentUsed || 0;
@@ -411,8 +421,8 @@ function renderCursor(d) {
 // to 0 — show at least 1% so "in use" is visible (matches Claude's own display).
 function qpct(p) { return p > 0 ? Math.max(1, Math.round(p)) : 0; }
 
-function quotaBar(label, pct, resetSecs) {
-  const v = pct || 0;
+function quotaBar(label, pctVal, resetSecs) {
+  const v = pctVal || 0;
   return `
     <div class="prog-group">
       <div class="prog-header">
@@ -435,9 +445,9 @@ function renderClaude(d, lastUsed) {
   const have = (fh.utilization_pct != null) || (sd.utilization_pct != null) || (ss.utilization_pct != null);
   if (!have) return '<div class="err">Claude quota unavailable (Headroom hasn\'t polled yet)</div>';
   return `
-    ${quotaBar('Current session (5h)', fh.utilization_pct, fh.seconds_to_reset)}
-    ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, sd.seconds_to_reset)}
-    ${quotaBar('Weekly · Sonnet (7d)', ss.utilization_pct, ss.seconds_to_reset)}
+    ${quotaBar('Current session (5h)', fh.utilization_pct, secsUntil(fh.resets_at))}
+    ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, secsUntil(sd.resets_at))}
+    ${quotaBar('Weekly · Sonnet (7d)', ss.utilization_pct, secsUntil(ss.resets_at))}
     <div class="rows" style="margin-top:10px">${lastUsedRow(lastUsed)}</div>
   `;
 }
@@ -643,6 +653,7 @@ function render(stats) {
   document.getElementById('ts').textContent = 'updated ' + d.toLocaleTimeString();
   document.getElementById('dot').className = 'dot live';
   resetCountdown(stats.refresh_ms || 10000);
+  startClock(stats.refresh_ms || 10000);
 }
 
 // ---- auto-refresh countdown ----
@@ -657,6 +668,27 @@ function resetCountdown(refreshMs) {
     cdRemaining = Math.max(0, cdRemaining - 1);
     el.textContent = cdRemaining + 's';
   }, 1000);
+}
+
+// ---- live wall-clock tick ----
+// SSE pushes only every REFRESH_MS, and Headroom polls every ~5min, so any
+// clock-derived value (quota reset countdowns, "used Xago") would otherwise sit
+// frozen between updates. Re-render those bits at the refresh cadence from the
+// last snapshot — secsUntil/timeAgo recompute against Date.now(), so they tick.
+let clockTimer = null;
+function clockTick() {
+  if (!lastStats) return;
+  renderHero(lastStats); // refreshes "used Xago" chips (no chart, safe to rebuild)
+  const claudeEl = document.getElementById('claude');
+  if (claudeEl) {
+    const lu = lastStats.last_used || {};
+    claudeEl.innerHTML = renderClaude(lastStats.headroom, lu.claude);
+  }
+}
+// tick at the same cadence as the auto-refresh countdown (stats.refresh_ms)
+function startClock(refreshMs) {
+  if (clockTimer) clearInterval(clockTimer);
+  clockTimer = setInterval(clockTick, refreshMs);
 }
 
 // manual refresh — pulls a fresh snapshot immediately via /api/stats
@@ -824,7 +856,7 @@ async function loadSettingsUI() {
 
     cursorEnabledCb.checked = config.CURSOR_ENABLED !== false;
     cursorTokenGroup.style.display = cursorEnabledCb.checked ? 'flex' : 'none';
-    
+
     document.getElementById('set-cursor-token').value = config.CURSOR_ACCESS_TOKEN || '';
     document.getElementById('set-rtk-home').value = config.RTK_DATA_HOME || '';
     document.getElementById('set-headroom-path').value = config.HEADROOM_SAVINGS_PATH || '';
@@ -879,7 +911,7 @@ settingsSave.addEventListener('click', async () => {
   for (const row of rows) {
     const prefix = row.querySelector('.px-prefix').value.trim();
     if (!prefix) continue;
-    
+
     updatedPricing.push([
       prefix,
       {
