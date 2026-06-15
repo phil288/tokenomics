@@ -694,11 +694,18 @@ const hcBase = (extra) => ({
     scales: {
       x: { ticks: { color: tc('muted'), font: { size: 10 }, maxTicksLimit: 6 }, grid: { color: tc('grid') } },
       y: { ticks: { color: tc('muted'), font: { size: 10 }, callback: extra.yfmt }, grid: { color: tc('grid') }, beginAtZero: true },
+      ...(extra.y1fmt ? {
+        y1: {
+          position: 'right', beginAtZero: true,
+          ticks: { color: tc('muted'), font: { size: 10 }, callback: extra.y1fmt },
+          grid: { drawOnChartArea: false },
+        }
+      } : {}),
     },
   },
 });
 
-function drawLine(id, labels, datasets, yfmt, tipfmt) {
+function drawLine(id, labels, datasets, yfmt, tipfmt, y1fmt) {
   const cv = document.getElementById(id);
   if (!cv) return;
   if (histCharts[id]) {
@@ -707,7 +714,7 @@ function drawLine(id, labels, datasets, yfmt, tipfmt) {
     histCharts[id].update('none');
     return;
   }
-  const cfg = hcBase({ yfmt, tooltip: { label: tipfmt } });
+  const cfg = hcBase({ yfmt, tooltip: { label: tipfmt }, y1fmt });
   cfg.data = { labels, datasets };
   histCharts[id] = new Chart(cv.getContext('2d'), cfg);
 }
@@ -719,12 +726,13 @@ function renderHistory() {
   const labels = rows.map(r => new Date(r.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   const ds = (data, color, label) => ({ label, data, borderColor: color, backgroundColor: color + '22', fill: false });
 
-  // 1. tokens saved
+  // 1. tokens saved — RTK/Caveman (~100k–400k) share the left axis; Headroom
+  // cache (tens of M) gets its own right axis so the small series stay readable.
   drawLine('hc-saved', labels, [
     ds(rows.map(r => r.rtk?.saved || 0), '#58a6ff', 'RTK'),
     ds(rows.map(r => r.cav?.saved || 0), '#d4a72c', 'Caveman'),
-    ds(rows.map(r => r.hr?.cacheSave || 0), '#3fb950', 'Headroom cache'),
-  ], ht, c => ` ${c.dataset.label}: ${ht(c.raw)}`);
+    { ...ds(rows.map(r => r.hr?.cacheSave || 0), '#3fb950', 'Headroom cache (right)'), yAxisID: 'y1' },
+  ], ht, c => ` ${c.dataset.label}: ${ht(c.raw)}`, ht);
 
   // 2. cost raw/real/saved
   drawLine('hc-cost', labels, [
