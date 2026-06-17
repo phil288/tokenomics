@@ -17,6 +17,7 @@
   --caveman: #d4a72c;
   --headroom: #3fb950;
   --cursor: #a78bfa;
+  --antigravity: #22d3ee;
   --danger: #f85149;
   --warn: #d29922;
   --grid: #21262d;
@@ -37,6 +38,7 @@
   --caveman: #9a6700;
   --headroom: #1a7f37;
   --cursor: #7c3aed;
+  --antigravity: #0891b2;
   --danger: #cf222e;
   --warn: #9a6700;
   --grid: #eaeef2;
@@ -938,6 +940,24 @@ header h1 span {
   align-items: center;
   gap: 10px;
   user-select: none;
+}
+
+.vis-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+
+.vis-grid .form-group-row {
+  display: flex;
+}
+
+.vis-grid label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
 }
 
 .form-group label {

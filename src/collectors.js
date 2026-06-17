@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const os = require('os');
 const { settings } = require('./settings');
 
@@ -315,6 +315,91 @@ async function collectCursor() {
   }
 }
 
+// ---- Antigravity (`agy`) usage by model group ----
+// `agy` is a bubbletea TUI whose `/usage` panel only renders inside a real
+// terminal; src/agy-usage.py drives it over a PTY and prints the raw panel.
+// Polling is heavy (~15-20s + spawns the ~171MB agy binary), so it runs on its
+// own slow timer (pollAntigravity) and collectStats() just reads the cache.
+
+const AGY_DRIVER = path.join(__dirname, 'agy-usage.py');
+const AGY_TIMEOUT_MS = 30000;
+
+let antigravityCache = { stale: true };  // last good (or empty) result
+let agyPolling = false;                   // re-entry guard
+
+// Parse the (ANSI-laden) `/usage` panel into structured per-group quota data.
+// The gauge percentage is REMAINING quota (100% = "Quota available").
+function parseAgyUsage(raw) {
+  const t = String(raw)
+    .replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, '')
+    .replace(/\x1b[()=>][0-9A-Za-z]?/g, '')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+  const lines = t.split(/\r?\n/);
+  let account = null;
+  const groups = [];
+  let g = null, limitKey = null;
+  const keyMap = { 'Weekly Limit': 'weekly', 'Five Hour Limit': 'fiveHour' };
+
+  for (const line of lines) {
+    const s = line.trim();
+    if (!s) continue;
+    let m;
+    if ((m = s.match(/^Account:\s*(.+)$/))) { account = m[1].trim(); continue; }
+    if ((m = s.match(/^([A-Z][A-Z &]*MODELS)$/))) {
+      g = { name: m[1].trim(), models: null, weekly: null, fiveHour: null };
+      groups.push(g); limitKey = null; continue;
+    }
+    if ((m = s.match(/^Models within this group:\s*(.+)$/))) { if (g) g.models = m[1].trim(); continue; }
+    if (keyMap[s] !== undefined) { limitKey = keyMap[s]; continue; }
+    if (g && limitKey) {
+      // gauge line: "[████…] 72.42%" — anchored on the bar bracket so the
+      // "72% remaining" status line below doesn't clobber the precise value.
+      if ((m = s.match(/\]\s*([\d.]+)%/))) { g[limitKey] = { remainingPct: parseFloat(m[1]), refresh: null, full: false }; continue; }
+      if (/Quota available/i.test(s)) { if (g[limitKey]) g[limitKey].full = true; limitKey = null; continue; }
+      if ((m = s.match(/Refreshes in\s+(.+?)\s*$/))) { if (g[limitKey]) g[limitKey].refresh = m[1].trim(); limitKey = null; continue; }
+    }
+  }
+
+  if (!account && !groups.length) return { error: 'could not parse usage panel' };
+  return { account, groups };
+}
+
+function runAgyDriver() {
+  return new Promise((resolve) => {
+    let stdout = '';
+    const child = spawn('python3', [AGY_DRIVER], {
+      env: { ...process.env, PATH: EXEC_PATH },
+    });
+    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { } }, AGY_TIMEOUT_MS);
+    child.stdout.on('data', d => { stdout += d; });
+    child.on('error', () => { clearTimeout(timer); resolve(null); });
+    child.on('close', () => { clearTimeout(timer); resolve(stdout || null); });
+  });
+}
+
+async function pollAntigravity() {
+  if (settings.ANTIGRAVITY_ENABLED === false) {
+    antigravityCache = { disabled: true };
+    return;
+  }
+  if (agyPolling) return;
+  agyPolling = true;
+  try {
+    const raw = await runAgyDriver();
+    const parsed = raw ? parseAgyUsage(raw) : { error: 'no output from agy driver' };
+    if (parsed.error) {
+      // keep the last good value, just flag it
+      antigravityCache = { ...antigravityCache, disabled: false, stale: true, error: parsed.error };
+    } else {
+      antigravityCache = { ...parsed, polled_at: new Date().toISOString(), stale: false };
+    }
+  } catch (e) {
+    antigravityCache = { ...antigravityCache, disabled: false, stale: true, error: e.message };
+  } finally {
+    agyPolling = false;
+  }
+}
+
 // ---- "last used" timestamps per tool ----
 // RTK: newest row in any active history.db. Caveman/Claude: newest entry in
 // their respective JSONL history logs. Returns ISO strings (or null when no data).
@@ -406,7 +491,19 @@ async function collectStats() {
     collectRTK(), collectCaveman(), collectHeadroom(), collectCursor()
   ]);
   const lastUsed = await collectLastUsed(headroom);
-  return { rtk, caveman, headroom, cursor, last_used: lastUsed, timestamp: new Date().toISOString(), refresh_ms: REFRESH_MS };
+  const visibility = {
+    rtk: settings.RTK_ENABLED !== false,
+    caveman: settings.CAVEMAN_ENABLED !== false,
+    claude: settings.CLAUDE_ENABLED !== false,
+    headroom: settings.HEADROOM_ENABLED !== false,
+    cursor: settings.CURSOR_ENABLED !== false,
+    antigravity: settings.ANTIGRAVITY_ENABLED !== false,
+  };
+  return {
+    rtk, caveman, headroom, cursor, antigravity: antigravityCache,
+    visibility, last_used: lastUsed,
+    timestamp: new Date().toISOString(), refresh_ms: REFRESH_MS,
+  };
 }
 
 module.exports = {
@@ -414,6 +511,8 @@ module.exports = {
   collectCaveman,
   collectHeadroom,
   collectCursor,
+  pollAntigravity,
+  parseAgyUsage,
   collectLastUsed,
   collectStats
 };

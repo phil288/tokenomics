@@ -44,14 +44,14 @@
   <div class="board">
     <!-- LEFT: Claude quota + Headroom -->
     <div class="board-col">
-      <div class="card">
+      <div class="card" id="claude-card">
         <div class="card-header">
           <span class="card-title">Claude quota <span class="card-sub">via Headroom</span></span>
           <div class="accent" style="background:var(--claude, #d97757)"></div>
         </div>
         <div id="claude"><span class="loading">…</span></div>
       </div>
-      <div class="card">
+      <div class="card" id="hdr-card">
         <div class="card-header">
           <span class="card-title">Headroom</span>
           <div class="accent" style="background:var(--headroom)"></div>
@@ -62,7 +62,7 @@
 
     <!-- MIDDLE: RTK on top, Caveman under -->
     <div class="board-col">
-      <div class="card">
+      <div class="card" id="rtk-card">
         <div class="card-header">
           <span class="card-title">RTK</span>
           <div class="accent" style="background:var(--rtk)"></div>
@@ -70,7 +70,7 @@
         <div id="rtk"><span class="loading">…</span></div>
         <div class="chart-wrap" id="rtk-chart-wrap" style="display: none;"><canvas id="rtk-chart"></canvas></div>
       </div>
-      <div class="card">
+      <div class="card" id="cav-card">
         <div class="card-header">
           <span class="card-title">Caveman</span>
           <div class="accent" style="background:var(--caveman)"></div>
@@ -104,6 +104,13 @@
         </div>
         <div id="cur"><span class="loading">…</span></div>
       </div>
+      <div class="card" id="antigravity-card">
+        <div class="card-header">
+          <span class="card-title">Antigravity <span class="card-sub">polled every 5 min · spawns agy</span></span>
+          <div class="accent" style="background:var(--antigravity)"></div>
+        </div>
+        <div id="agy"><span class="loading">…</span></div>
+      </div>
     </div>
   </div>
 
@@ -114,9 +121,20 @@
         <h2>Configuration Settings</h2>
         <button class="modal-close" id="settings-close">&times;</button>
       </div>
-      <div class="form-group form-group-row">
-        <input type="checkbox" id="set-cursor-enabled">
-        <label for="set-cursor-enabled">Enable Cursor Stats</label>
+      <div style="margin-bottom: 16px;">
+        <label style="font-weight: 600; font-size: 14px;">Visible Sources</label>
+        <div class="vis-grid">
+          <div class="form-group-row"><input type="checkbox" id="set-vis-rtk"><label for="set-vis-rtk">RTK</label></div>
+          <div class="form-group-row"><input type="checkbox" id="set-vis-caveman"><label for="set-vis-caveman">Caveman</label></div>
+          <div class="form-group-row"><input type="checkbox" id="set-vis-claude"><label for="set-vis-claude">Claude quota</label></div>
+          <div class="form-group-row"><input type="checkbox" id="set-vis-headroom"><label for="set-vis-headroom">Headroom</label></div>
+          <div class="form-group-row"><input type="checkbox" id="set-cursor-enabled"><label for="set-cursor-enabled">Cursor</label></div>
+          <div class="form-group-row"><input type="checkbox" id="set-vis-antigravity"><label for="set-vis-antigravity">Antigravity</label></div>
+        </div>
+        <div style="font-size: 11px; opacity: 0.6; margin-top: 6px; line-height: 1.4;">
+          Antigravity polling launches the ~171 MB <code>agy</code> binary for ~15–20 s every 5 minutes.
+          Disabling Cursor or Antigravity also stops their data collection.
+        </div>
       </div>
       <div class="form-group" id="set-cursor-token-group">
         <label for="set-cursor-token">Cursor Access Token</label>

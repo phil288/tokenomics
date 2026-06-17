@@ -2,12 +2,13 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { getSettings, updateSettings } = require('./src/settings');
-const { collectStats } = require('./src/collectors');
+const { collectStats, pollAntigravity } = require('./src/collectors');
 const { history, recordSnapshot } = require('./src/history');
 
 const PORT = Number(process.env.PORT) || 3000;
 const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
 const HISTORY_INTERVAL_MS = Number(process.env.HISTORY_INTERVAL_MS) || 60000;
+const ANTIGRAVITY_POLL_MS = Number(process.env.ANTIGRAVITY_POLL_MS) || 300000;
 
 const clients = new Set();
 
@@ -32,9 +33,13 @@ async function recordHistory() {
 // Set up periodic tasks
 setInterval(pushStats, REFRESH_MS);
 setInterval(recordHistory, HISTORY_INTERVAL_MS);
+// Antigravity is polled on a slow timer of its own: each poll spawns the heavy
+// agy binary over a PTY (~15-20s), so it must stay out of the fast SSE loop.
+setInterval(() => pollAntigravity().catch(err => console.error('Antigravity poll failed:', err)), ANTIGRAVITY_POLL_MS);
 
 // Run initial history recording task on startup
 recordHistory().catch(err => console.error('Initial history record failed:', err));
+pollAntigravity().catch(err => console.error('Initial Antigravity poll failed:', err));
 
 const server = http.createServer(async (req, res) => {
   if (req.url === '/') {
@@ -81,6 +86,11 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsed = JSON.parse(body);
         const updated = updateSettings(parsed);
+        // Re-enabling Antigravity: kick off an immediate poll so the card
+        // repopulates now instead of waiting for the next 5-min tick.
+        if (updated.ANTIGRAVITY_ENABLED !== false) {
+          pollAntigravity().catch(err => console.error('Antigravity poll failed:', err));
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, settings: updated }));
       } catch (err) {

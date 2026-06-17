@@ -238,20 +238,26 @@ function renderCav(d, lastUsed) {
   `;
 }
 
-// One Cursor usage bar (Total / Auto+Composer / API). `sub` is {style, text}.
-// Shared by the individual (planUsage) and team dashboards.
-function cursorBar(label, pctVal, sub, mb = 12) {
+// One usage progress bar. `sub` is {style, text}; `color` is a CSS color.
+// Shared by the Cursor and Antigravity cards.
+function usageBar(label, pctVal, sub, color = 'var(--cursor)', mb = 12) {
   return `
       <div class="prog-group" style="margin-bottom: ${mb}px;">
         <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
           <span class="prog-label" style="font-weight: 500;">${label}</span>
-          <span class="prog-pct" style="color:var(--cursor); font-weight: 700;">${Math.round(pctVal)}%</span>
+          <span class="prog-pct" style="color:${color}; font-weight: 700;">${Math.round(pctVal)}%</span>
         </div>
         <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
-          <div class="fill" style="width:${Math.min(pctVal, 100)}%; background: var(--cursor); height: 100%; border-radius: 3px;"></div>
+          <div class="fill" style="width:${Math.min(pctVal, 100)}%; background: ${color}; height: 100%; border-radius: 3px;"></div>
         </div>
         <div class="prog-sub" style="font-size: 11px; margin-top: 4px; ${sub.style}">${sub.text}</div>
       </div>`;
+}
+
+// One Cursor usage bar (Total / Auto+Composer / API). `sub` is {style, text}.
+// Shared by the individual (planUsage) and team dashboards.
+function cursorBar(label, pctVal, sub, mb = 12) {
+  return usageBar(label, pctVal, sub, 'var(--cursor)', mb);
 }
 const CURSOR_SUB_AUTO = { style: 'opacity: 0.6; line-height: 1.3;', text: 'Additional usage beyond limits consumes API quota or on-demand spend.' };
 const CURSOR_SUB_API = { style: 'opacity: 0.6; line-height: 1.3;', text: 'Additional usage beyond limits consumes on-demand spend. Your plan includes at least $20 of API usage.' };
@@ -363,6 +369,55 @@ function renderCursor(d) {
       </table>
     </div>
   `;
+}
+
+// ---- Antigravity usage by model group ----
+// agy's /usage gauge is REMAINING quota, so the bar shows remaining % directly
+// (100% = full quota available). The sub-line carries the reset countdown.
+function agyLimitSub(lim) {
+  if (!lim) return { style: 'opacity:0.6;', text: '—' };
+  if (lim.full) return { style: 'opacity:0.8;', text: 'Quota available' };
+  return { style: 'opacity:0.8;', text: lim.refresh ? `Refreshes in ${lim.refresh}` : 'remaining' };
+}
+
+// "GEMINI MODELS" → "Gemini", "CLAUDE AND GPT MODELS" → "Claude & GPT"
+function agyGroupTitle(name) {
+  return String(name || '')
+    .replace(/\s*MODELS$/i, '')
+    .replace(/\bAND\b/gi, '&')
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .replace(/Gpt/g, 'GPT');
+}
+
+function renderAntigravity(d) {
+  if (!d || d.disabled) return '';
+  const hasGroups = d.groups && d.groups.length;
+  if (!hasGroups) {
+    if (d.error) return `<div class="err">${d.error}</div>`;
+    return `<div class="loading">Fetching usage… first poll runs in the background (spawns agy).</div>`;
+  }
+
+  const remPct = lim => lim ? (lim.full ? 100 : (lim.remainingPct || 0)) : 0;
+  let html = '';
+  if (d.account) html += `<div class="prog-sub" style="opacity:0.7; margin-bottom:10px;">${d.account}</div>`;
+
+  for (const g of d.groups) {
+    html += `
+      <div style="margin-bottom:6px;">
+        <div style="font-weight:600; font-size:12px;">${agyGroupTitle(g.name)}</div>
+        ${g.models ? `<div class="prog-sub" style="opacity:0.55; font-size:11px;">${g.models}</div>` : ''}
+      </div>
+      ${usageBar('Weekly', remPct(g.weekly), agyLimitSub(g.weekly), 'var(--antigravity)', 10)}
+      ${usageBar('5-hour', remPct(g.fiveHour), agyLimitSub(g.fiveHour), 'var(--antigravity)', 16)}`;
+  }
+
+  if (d.stale) {
+    html += `<div class="prog-sub" style="opacity:0.5; font-size:11px;">⚠ showing last successful poll${d.error ? ` (${d.error})` : ''}</div>`;
+  } else if (d.polled_at) {
+    html += `<div class="prog-sub" style="opacity:0.45; font-size:11px;">polled ${new Date(d.polled_at).toLocaleTimeString()}</div>`;
+  }
+  return html;
 }
 
 // quota % can be a small fraction (e.g. 0.4%); never round a nonzero value down
@@ -567,13 +622,27 @@ function render(stats) {
   document.getElementById('rtk').innerHTML = renderRTK(stats.rtk, lu.rtk);
   document.getElementById('cav').innerHTML = renderCav(stats.caveman, lu.caveman);
 
-  const cursorCard = document.getElementById('cursor-card');
-  if (stats.cursor && stats.cursor.disabled) {
-    if (cursorCard) cursorCard.style.display = 'none';
-  } else {
-    if (cursorCard) cursorCard.style.display = 'block';
+  // Per-card visibility (settings-driven). Cursor & Antigravity are also hidden
+  // when their collector reports `disabled` (collection skipped server-side).
+  const vis = stats.visibility || {};
+  const setCard = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? 'block' : 'none'; };
+  setCard('rtk-card', vis.rtk !== false);
+  setCard('cav-card', vis.caveman !== false);
+  setCard('claude-card', vis.claude !== false);
+  setCard('hdr-card', vis.headroom !== false);
+
+  const cursorVisible = vis.cursor !== false && !(stats.cursor && stats.cursor.disabled);
+  setCard('cursor-card', cursorVisible);
+  if (cursorVisible) {
     const curEl = document.getElementById('cur');
     if (curEl) curEl.innerHTML = renderCursor(stats.cursor);
+  }
+
+  const agyVisible = vis.antigravity !== false && !(stats.antigravity && stats.antigravity.disabled);
+  setCard('antigravity-card', agyVisible);
+  if (agyVisible) {
+    const agyEl = document.getElementById('agy');
+    if (agyEl) agyEl.innerHTML = renderAntigravity(stats.antigravity);
   }
 
   const claudeEl = document.getElementById('claude');
@@ -801,6 +870,12 @@ async function loadSettingsUI() {
     cursorEnabledCb.checked = config.CURSOR_ENABLED !== false;
     cursorTokenGroup.style.display = cursorEnabledCb.checked ? 'flex' : 'none';
 
+    document.getElementById('set-vis-rtk').checked = config.RTK_ENABLED !== false;
+    document.getElementById('set-vis-caveman').checked = config.CAVEMAN_ENABLED !== false;
+    document.getElementById('set-vis-claude').checked = config.CLAUDE_ENABLED !== false;
+    document.getElementById('set-vis-headroom').checked = config.HEADROOM_ENABLED !== false;
+    document.getElementById('set-vis-antigravity').checked = config.ANTIGRAVITY_ENABLED !== false;
+
     document.getElementById('set-cursor-token').value = config.CURSOR_ACCESS_TOKEN || '';
     document.getElementById('set-rtk-home').value = config.RTK_DATA_HOME || '';
     document.getElementById('set-headroom-path').value = config.HEADROOM_SAVINGS_PATH || '';
@@ -869,6 +944,11 @@ settingsSave.addEventListener('click', async () => {
   }
 
   const body = {
+    RTK_ENABLED: document.getElementById('set-vis-rtk').checked,
+    CAVEMAN_ENABLED: document.getElementById('set-vis-caveman').checked,
+    CLAUDE_ENABLED: document.getElementById('set-vis-claude').checked,
+    HEADROOM_ENABLED: document.getElementById('set-vis-headroom').checked,
+    ANTIGRAVITY_ENABLED: document.getElementById('set-vis-antigravity').checked,
     CURSOR_ENABLED: cursorEnabledCb.checked,
     CURSOR_ACCESS_TOKEN: document.getElementById('set-cursor-token').value,
     RTK_DATA_HOME: document.getElementById('set-rtk-home').value,

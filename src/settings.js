@@ -20,7 +20,14 @@ const DEFAULT_PRICING = [
 ];
 
 let settings = {
+  // Per-card visibility toggles. CURSOR_ENABLED / ANTIGRAVITY_ENABLED also gate
+  // their (expensive) data collection; the rest are display-only.
+  RTK_ENABLED: true,
+  CAVEMAN_ENABLED: true,
+  CLAUDE_ENABLED: true,
+  HEADROOM_ENABLED: true,
   CURSOR_ENABLED: true,
+  ANTIGRAVITY_ENABLED: true,
   CURSOR_ACCESS_TOKEN: '',
   RTK_DATA_HOME: '',
   HEADROOM_SAVINGS_PATH: '',
@@ -56,10 +63,12 @@ function getSettings() {
 }
 
 function updateSettings(parsed) {
-  if (typeof parsed.CURSOR_ENABLED === 'boolean') {
-    settings.CURSOR_ENABLED = parsed.CURSOR_ENABLED;
-  } else if (parsed.CURSOR_ENABLED !== undefined) {
-    settings.CURSOR_ENABLED = parsed.CURSOR_ENABLED === 'true' || parsed.CURSOR_ENABLED === 1;
+  for (const key of ['RTK_ENABLED', 'CAVEMAN_ENABLED', 'CLAUDE_ENABLED', 'HEADROOM_ENABLED', 'CURSOR_ENABLED', 'ANTIGRAVITY_ENABLED']) {
+    if (typeof parsed[key] === 'boolean') {
+      settings[key] = parsed[key];
+    } else if (parsed[key] !== undefined) {
+      settings[key] = parsed[key] === 'true' || parsed[key] === 1;
+    }
   }
   if (parsed.CURSOR_ACCESS_TOKEN !== undefined) {
     settings.CURSOR_ACCESS_TOKEN = parsed.CURSOR_ACCESS_TOKEN.trim();

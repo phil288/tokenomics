@@ -222,6 +222,12 @@ Understanding how each source is resolved is crucial for debugging:
 - Queries the Connect RPC endpoint `https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` to fetch account quotas and billing cycles.
 - Authenticates using the `cursorAuth/accessToken` JWT token extracted from Cursor's local SQLite store (`~/.config/Cursor/User/globalStorage/state.vscdb`) or the `CURSOR_ACCESS_TOKEN` environment variable.
 
+### 5. Antigravity
+- There is **no local usage file** for Antigravity — its only reliable usage source is the `agy` CLI's interactive `/usage` slash command (which only renders inside a real TUI; `agy --print/-i "/usage"` treats it as an agent prompt and does not work).
+- `src/agy-usage.py` drives `agy` headlessly: it allocates a **PTY** via Python's `pty` module, sets a window size (bubbletea quits without one), waits for the TUI to settle, types `/usage`, captures the rendered panel, and prints it. `collectors.js` then strips ANSI and parses it (`parseAgyUsage`) into per-model-group quota (Gemini vs Claude+GPT, each with a weekly and 5-hour limit; the gauge % is **remaining** quota).
+- Polling is **expensive**: each poll spawns the ~171 MB `agy` binary for ~15–20 s. It therefore runs on its own slow timer (`ANTIGRAVITY_POLL_MS`, default `300000` = 5 min) via `pollAntigravity()`, and `collectStats()` only reads the cached result — it is **not** part of the fast 10 s SSE loop.
+- **Requirements**: system `python3` (used only as a PTY driver, no npm dependency added) and `agy` on `PATH` (`~/.local/bin/agy`) with a logged-in Antigravity account.
+
 ## 5. Development & Verification Workflow
 
 ### Running Locally
@@ -237,4 +243,5 @@ For testing different scenarios, you can override settings:
 - `REFRESH_MS` (default: `10000`)
 - `HISTORY_INTERVAL_MS` (default: `60000`)
 - `HISTORY_MAX` (default: `5000`)
+- `ANTIGRAVITY_POLL_MS` (default: `300000` — how often the heavy `agy` `/usage` poll runs)
 - `RTK_DATA_HOME` (forces a single RTK directory path)
