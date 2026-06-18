@@ -19,6 +19,8 @@
         <button data-theme-val="auto" title="Auto (follow system)">◐</button>
         <button data-theme-val="dark" title="Dark">☾</button>
       </div>
+      <button class="rbtn" id="arrange-btn" title="Arrange cards (drag to reposition)">⇲</button>
+      <button class="rbtn" id="reset-layout-btn" title="Reset card layout" style="display:none">⤺</button>
       <button class="rbtn" id="settings-btn" title="Settings">⚙️</button>
       <div class="refresh-ctl">
         <span>next refresh</span>
@@ -81,7 +83,7 @@
 
     <!-- RIGHT: trend graphs -->
     <div class="board-col">
-      <div class="card graph-card">
+      <div class="card graph-card" id="trends-card">
         <div class="card-header">
           <span class="card-title">Trends</span>
           <div class="hist-range" id="hist-range">
@@ -193,7 +195,7 @@
     </div>
   </div>
 
-  <script src="/app.js"></script>
+  <script type="module" src="/web/main.js"></script>
 </body>
 
 </html>

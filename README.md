@@ -59,7 +59,7 @@ npm start
 
 ## Development
 
-Frontend changes (`index.html`, `index.css`, `app.js`) are served fresh on every request — just **refresh
+Frontend changes (`index.html`, `index.css`, `src/web/*.js`) are served fresh on every request — just **refresh
 the browser**, no restart. For backend changes (`server.js`), use watch mode (auto-
 restarts on save):
 
@@ -182,7 +182,7 @@ Claude cache ratios (cache read ≈ 0.1× input, cache write ≈ 1.25×/2× inpu
 Contributions are welcome — especially **support for other LLM providers**.
 Tokenomics was developed and tested with Claude only; adding OpenAI / Codex,
 Gemini, or others mainly means extending the per-model pricing table and cache
-ratios (in `server.js` and `app.js`) and confirming the corresponding tool
+ratios (in `server.js` and `src/web/pricing.js`) and confirming the corresponding tool
 output is parsed correctly. Open an issue or PR.
 
 ## License

@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { priceFor } = require('./settings');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// Overridable via env (see settings.js) so tests isolate to a temp dir.
+const DATA_DIR = process.env.TOKENOMICS_DATA_DIR || path.join(__dirname, '..', 'data');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.jsonl');
 const HISTORY_MAX = Number(process.env.HISTORY_MAX) || 5000;
 

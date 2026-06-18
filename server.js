@@ -45,7 +45,7 @@ const server = http.createServer(async (req, res) => {
   if (req.url === '/') {
     try {
       const html = fs.readFileSync(path.join(__dirname, 'index.html'));
-      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache' });
       res.end(html);
     } catch (err) {
       res.writeHead(500);
@@ -54,20 +54,29 @@ const server = http.createServer(async (req, res) => {
   } else if (req.url === '/index.css') {
     try {
       const css = fs.readFileSync(path.join(__dirname, 'index.css'));
-      res.writeHead(200, { 'Content-Type': 'text/css' });
+      res.writeHead(200, { 'Content-Type': 'text/css', 'Cache-Control': 'no-cache' });
       res.end(css);
     } catch (err) {
       res.writeHead(404);
       res.end('index.css not found');
     }
-  } else if (req.url === '/app.js') {
+  } else if (/^\/web\/[\w./-]+\.js$/.test(req.url)) {
+    // Serve the ES-module frontend from src/web/. The regex already bars
+    // traversal chars; resolve + prefix-check keeps it airtight.
+    const webDir = path.join(__dirname, 'src', 'web');
+    const file = path.join(webDir, req.url.slice('/web/'.length));
+    if (!file.startsWith(webDir + path.sep)) {
+      res.writeHead(403);
+      res.end('Forbidden');
+      return;
+    }
     try {
-      const js = fs.readFileSync(path.join(__dirname, 'app.js'));
-      res.writeHead(200, { 'Content-Type': 'application/javascript' });
+      const js = fs.readFileSync(file);
+      res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' });
       res.end(js);
     } catch (err) {
       res.writeHead(404);
-      res.end('app.js not found');
+      res.end('module not found');
     }
   } else if (req.url === '/api/stats') {
     const stats = await collectStats();

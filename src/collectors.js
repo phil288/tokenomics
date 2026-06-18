@@ -513,6 +513,8 @@ module.exports = {
   collectCursor,
   pollAntigravity,
   parseAgyUsage,
+  parseTextRTK,
+  parseRtkVal,
   collectLastUsed,
   collectStats
 };

@@ -156,7 +156,7 @@ This guide is for AI coding agents (Claude Code, Antigravity, or other LLM-based
 - **Caveman**: Ultra-compressed Claude Code communication mode.
 - **Headroom**: Context optimization layer and proxy.
 
-The application is structured as a **single-file backend** (`server.js`) and a **modular frontend** (`index.html`, `index.css`, `app.js`), keeping the codebase extremely lean, fast, and easy to modify.
+The application is structured as a **single-file backend** (`server.js`) and a **modular ES-module frontend** (`index.html`, `index.css`, and the `src/web/*.js` modules), keeping the codebase extremely lean, fast, and easy to modify.
 
 ## 2. Key Architecture & File Layout
 
@@ -166,13 +166,16 @@ The application is structured as a **single-file backend** (`server.js`) and a *
   - Spawns subprocesses and reads files on a timer (`REFRESH_MS`, default: `10000`) to collect tool data.
   - Records compact snapshots of historical data to `data/history.jsonl` every minute (`HISTORY_INTERVAL_MS`, default: `60000`), capped at `HISTORY_MAX` (default: `5000`) entries.
 - **`index.html`**:
-  - The HTML layout structure. Links to `/index.css` and `/app.js`.
+  - The HTML layout structure. Links to `/index.css` and loads `/web/main.js` as an ES module.
 - **`index.css`**:
   - The styling system with a customized, clean theme stylesheet with dark, light, and automatic theme support.
-- **`app.js`**:
-  - The client-side dashboard logic.
-  - Subscribes to the `/api/events` SSE stream to receive live data updates.
-  - Renders time-series trends (tokens saved, cost over time, quota utilization) using the **Chart.js** library loaded from a CDN.
+- **`src/web/*.js`** — the client-side dashboard, split into ES modules (served by `server.js` under `/web/`):
+  - `main.js` — entry point: wires the `/api/events` SSE stream to the renderers, owns the refresh countdown + live clock, and bootstraps every other module.
+  - `cards.js` — per-card HTML renderers (RTK, Caveman, Cursor, Antigravity, Claude, Headroom, hero).
+  - `charts.js` — the RTK daily bar chart and history trend lines (**Chart.js**, loaded from a CDN).
+  - `pricing.js` — the client `PRICING` matrix and per-model cost/weight math.
+  - `format.js` — pure formatting helpers (token/USD/time formatting).
+  - `theme.js` — dark/light/auto theme switching. `layout.js` — free-drag card layout. `settings.js` — settings modal. `state.js` — shared mutable state.
 - **`data/`** (gitignored):
   - Created at runtime to store the `history.jsonl` file.
 
@@ -192,9 +195,9 @@ The project prides itself on having **zero runtime dependencies** (other than No
 - All web operations, routing, SSE streaming, child process orchestration, and file reads must continue to use Node.js standard library APIs (`http`, `fs`, `path`, `child_process`, `os`).
 
 ### 🔄 Keep Cost & Model Lists in Sync
-Both `server.js` and `app.js` define pricing matrices for Claude, Gemini/Antigravity, and Cursor models:
+Both `server.js` and `src/web/pricing.js` define pricing matrices for Claude, Gemini/Antigravity, and Cursor models:
 - In `server.js`: `const PRICING` array defines model prefixes and token costs / cache multiplier values.
-- In `app.js`: `const PRICING` array handles the representation on the client side.
+- In `src/web/pricing.js`: the exported `PRICING` array handles the representation on the client side.
 - **If you add a new model or update pricing, you must modify BOTH files to keep them perfectly in sync.**
 
 ### 🎨 Design & Visual Excellence
@@ -235,7 +238,7 @@ Understanding how each source is resolved is crucial for debugging:
   ```bash
   rtk npm run dev
   ```
-- Frontend modifications (`index.html`, `index.css`, `app.js`) are served directly from the disk. **Simply edit the files and refresh your browser** to see the changes.
+- Frontend modifications (`index.html`, `index.css`, `src/web/*.js`) are served directly from the disk. **Simply edit the files and refresh your browser** to see the changes.
 
 ### Environment Variables
 For testing different scenarios, you can override settings:

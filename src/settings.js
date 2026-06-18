@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// DATA_DIR is overridable via env so tests can isolate state to a temp dir
+// instead of clobbering the real (gitignored) data/ directory.
+const DATA_DIR = process.env.TOKENOMICS_DATA_DIR || path.join(__dirname, '..', 'data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 const DEFAULT_PRICING = [
@@ -31,7 +33,9 @@ let settings = {
   CURSOR_ACCESS_TOKEN: '',
   RTK_DATA_HOME: '',
   HEADROOM_SAVINGS_PATH: '',
-  PRICING: DEFAULT_PRICING
+  PRICING: DEFAULT_PRICING,
+  // Free-drag card layout: { "<card-id>": { x, y, w } } in px. Empty = native grid.
+  CARD_LAYOUT: {}
 };
 
 function loadSettings() {
@@ -81,6 +85,9 @@ function updateSettings(parsed) {
   }
   if (Array.isArray(parsed.PRICING)) {
     settings.PRICING = parsed.PRICING;
+  }
+  if (parsed.CARD_LAYOUT && typeof parsed.CARD_LAYOUT === 'object') {
+    settings.CARD_LAYOUT = parsed.CARD_LAYOUT;
   }
   saveSettings();
   return getSettings();
