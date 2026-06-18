@@ -45,14 +45,26 @@ Requires **Node.js ≥ 18**.
 
 ## Quick start
 
-One-liner (clones to `~/tokenomics` and starts on http://localhost:3000):
+One-liner (clones to `~/tokenomics`, installs a systemd `--user` service, and
+serves on http://localhost:3000 — auto-starts on boot):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phil288/tokenomics/main/install.sh | sh
 ```
 
-Options via env vars: `PORT=8080`, `TOKENOMICS_DIR=~/apps/tokenomics`, `SERVICE=1`
-(install + start a systemd `--user` service), `START=0` (clone/update only).
+If port 3000 is already in use, the installer prompts for a different one.
+
+Options via env vars: `PORT=8080`, `TOKENOMICS_DIR=~/apps/tokenomics`,
+`START=0` (clone/update only). Requires systemd (`--user`).
+
+Uninstall (stops + removes the service, prompts before deleting files):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/phil288/tokenomics/main/uninstall.sh | sh
+```
+
+Uninstall options: `PURGE=1` (delete the checkout without prompting),
+`KEEP_FILES=1` (remove only the service).
 
 Or manually:
 

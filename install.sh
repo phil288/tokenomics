@@ -3,12 +3,14 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/phil288/tokenomics/main/install.sh | sh
 #
+# Installs a systemd --user service so the dashboard auto-starts and survives
+# reboots. Requires systemd.
+#
 # Environment overrides:
 #   TOKENOMICS_DIR   install location          (default: $HOME/tokenomics)
 #   TOKENOMICS_REPO  git URL to clone          (default: https://github.com/phil288/tokenomics.git)
 #   PORT             port to serve on          (default: 3000)
-#   SERVICE=1        install+start a systemd --user service instead of running in foreground
-#   START=0          clone/update only, do not start anything
+#   START=0          clone/update only, do not install the service
 
 set -eu
 
@@ -16,11 +18,15 @@ REPO="${TOKENOMICS_REPO:-https://github.com/phil288/tokenomics.git}"
 DIR="${TOKENOMICS_DIR:-$HOME/tokenomics}"
 PORT="${PORT:-3000}"
 START="${START:-1}"
-SERVICE="${SERVICE:-0}"
 
 info() { printf '\033[1;36m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$1" >&2; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$1" >&2; exit 1; }
+
+# Exit 0 if a TCP port is free to bind, 1 if already in use.
+port_free() {
+  node -e 'const s=require("net").createServer();s.once("error",e=>process.exit(e.code==="EADDRINUSE"?1:2));s.once("listening",()=>s.close(()=>process.exit(0)));s.listen(Number(process.argv[1]),"0.0.0.0")' "$1"
+}
 
 # --- prerequisites -----------------------------------------------------------
 command -v git  >/dev/null 2>&1 || die "git not found. Install git and re-run."
@@ -47,12 +53,26 @@ if [ "$START" = "0" ]; then
   exit 0
 fi
 
-if [ "$SERVICE" = "1" ]; then
-  command -v systemctl >/dev/null 2>&1 || die "systemctl not found; cannot install service. Re-run without SERVICE=1."
-  UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-  mkdir -p "$UNIT_DIR"
-  NODE_BIN="$(command -v node)"
-  cat > "$UNIT_DIR/tokenomics.service" <<EOF
+# Resolve a free port, prompting the user when the chosen one is taken.
+while ! port_free "$PORT"; do
+  warn "Port $PORT is already in use."
+  [ -r /dev/tty ] || die "No terminal to prompt. Re-run with PORT=<free port>."
+  printf 'Enter a different port: ' > /dev/tty
+  read NEWPORT < /dev/tty || die "No port entered."
+  case "$NEWPORT" in
+    ''|*[!0-9]*) warn "Not a number." ;;
+    *) [ "$NEWPORT" -ge 1 ] && [ "$NEWPORT" -le 65535 ] && PORT="$NEWPORT" || warn "Port out of range." ;;
+  esac
+done
+
+# Install + start a systemd --user service (auto-start, reboot-safe).
+command -v systemctl >/dev/null 2>&1 || die "systemctl not found; this installer requires systemd."
+systemctl --user show-environment >/dev/null 2>&1 || die "systemd --user instance unavailable; cannot install the service."
+
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+mkdir -p "$UNIT_DIR"
+NODE_BIN="$(command -v node)"
+cat > "$UNIT_DIR/tokenomics.service" <<EOF
 [Unit]
 Description=Tokenomics Dashboard
 After=network.target
@@ -68,14 +88,8 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 EOF
-  systemctl --user daemon-reload
-  systemctl --user enable --now tokenomics.service
-  loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || warn "could not enable linger; service stops on logout."
-  info "Service running. Dashboard: http://localhost:$PORT"
-  info "Manage:  systemctl --user status|restart|stop tokenomics"
-  exit 0
-fi
-
-info "Starting Tokenomics on http://localhost:$PORT  (Ctrl-C to stop)"
-cd "$DIR"
-exec env PORT="$PORT" node server.js
+systemctl --user daemon-reload
+systemctl --user enable --now tokenomics.service
+loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || warn "could not enable linger; service stops on logout."
+info "Service running. Dashboard: http://localhost:$PORT"
+info "Manage:  systemctl --user status|restart|stop tokenomics"
