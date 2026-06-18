@@ -45,8 +45,19 @@ Requires **Node.js ≥ 18**.
 
 ## Quick start
 
+One-liner (clones to `~/tokenomics` and starts on http://localhost:3000):
+
 ```bash
-git clone https://github.com/<your-username>/tokenomics.git
+curl -fsSL https://raw.githubusercontent.com/phil288/tokenomics/main/install.sh | sh
+```
+
+Options via env vars: `PORT=8080`, `TOKENOMICS_DIR=~/apps/tokenomics`, `SERVICE=1`
+(install + start a systemd `--user` service), `START=0` (clone/update only).
+
+Or manually:
+
+```bash
+git clone https://github.com/phil288/tokenomics.git
 cd tokenomics
 node server.js          # then open http://localhost:3000
 ```
