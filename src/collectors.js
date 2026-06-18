@@ -329,6 +329,11 @@ let agyPolling = false;                   // re-entry guard
 
 // Parse the (ANSI-laden) `/usage` panel into structured per-group quota data.
 // The gauge percentage is REMAINING quota (100% = "Quota available").
+//
+// We don't assume which limits exist — agy varies by tier (Starter Quota shows
+// only a weekly limit; others may add a 5-hour or other window). Every "<X>
+// Limit" header agy prints becomes an entry in the group's `limits` array, so
+// the UI renders exactly what agy reports, no more, no less.
 function parseAgyUsage(raw) {
   const t = String(raw)
     .replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, '')
@@ -337,8 +342,7 @@ function parseAgyUsage(raw) {
   const lines = t.split(/\r?\n/);
   let account = null;
   const groups = [];
-  let g = null, limitKey = null;
-  const keyMap = { 'Weekly Limit': 'weekly', 'Five Hour Limit': 'fiveHour' };
+  let g = null, cur = null; // cur = limit currently being filled in
 
   for (const line of lines) {
     const s = line.trim();
@@ -346,17 +350,23 @@ function parseAgyUsage(raw) {
     let m;
     if ((m = s.match(/^Account:\s*(.+)$/))) { account = m[1].trim(); continue; }
     if ((m = s.match(/^([A-Z][A-Z &]*MODELS)$/))) {
-      g = { name: m[1].trim(), models: null, weekly: null, fiveHour: null };
-      groups.push(g); limitKey = null; continue;
+      g = { name: m[1].trim(), models: null, limits: [] };
+      groups.push(g); cur = null; continue;
     }
     if ((m = s.match(/^Models within this group:\s*(.+)$/))) { if (g) g.models = m[1].trim(); continue; }
-    if (keyMap[s] !== undefined) { limitKey = keyMap[s]; continue; }
-    if (g && limitKey) {
+    // any "<label> Limit" header opens a new limit section (e.g. "Weekly Limit",
+    // "Five Hour Limit"). Anchored + capital "Limit" so the descriptive footer
+    // ("…share a weekly limit.") doesn't match.
+    if (g && (m = s.match(/^(.+?)\s+Limit$/))) {
+      cur = { label: m[1].trim(), remainingPct: null, refresh: null, full: false };
+      g.limits.push(cur); continue;
+    }
+    if (g && cur) {
       // gauge line: "[████…] 72.42%" — anchored on the bar bracket so the
       // "72% remaining" status line below doesn't clobber the precise value.
-      if ((m = s.match(/\]\s*([\d.]+)%/))) { g[limitKey] = { remainingPct: parseFloat(m[1]), refresh: null, full: false }; continue; }
-      if (/Quota available/i.test(s)) { if (g[limitKey]) g[limitKey].full = true; limitKey = null; continue; }
-      if ((m = s.match(/Refreshes in\s+(.+?)\s*$/))) { if (g[limitKey]) g[limitKey].refresh = m[1].trim(); limitKey = null; continue; }
+      if ((m = s.match(/\]\s*([\d.]+)%/))) { cur.remainingPct = parseFloat(m[1]); continue; }
+      if (/Quota available/i.test(s)) { cur.full = true; cur = null; continue; }
+      if ((m = s.match(/Refreshes in\s+(.+?)\s*$/))) { cur.refresh = m[1].trim(); cur = null; continue; }
     }
   }
 

@@ -95,18 +95,54 @@ test('parseAgyUsage parses account and both model groups', () => {
   assert.equal(r.groups[1].name, 'CLAUDE AND GPT MODELS');
 });
 
-test('parseAgyUsage reads remaining-quota gauge through ANSI codes', () => {
+test('parseAgyUsage captures each reported limit generically', () => {
   const [gemini, claude] = parseAgyUsage(AGY_PANEL).groups;
 
-  assert.equal(gemini.weekly.remainingPct, 72.42);
-  assert.equal(gemini.weekly.refresh, '3d 4h');
-  // "Quota available" overrides the gauge → full quota
-  assert.equal(gemini.fiveHour.full, true);
+  // labels come straight from agy (" Limit" suffix stripped), in panel order
+  assert.deepEqual(gemini.limits.map(l => l.label), ['Weekly', 'Five Hour']);
 
-  assert.equal(claude.weekly.remainingPct, 50);
-  assert.equal(claude.weekly.refresh, '5d');
-  assert.equal(claude.fiveHour.remainingPct, 20);
-  assert.equal(claude.fiveHour.refresh, '2h');
+  const gWeekly = gemini.limits[0];
+  assert.equal(gWeekly.remainingPct, 72.42); // read through ANSI codes
+  assert.equal(gWeekly.refresh, '3d 4h');
+  // "Quota available" overrides the gauge → full quota
+  assert.equal(gemini.limits[1].full, true);
+
+  assert.deepEqual(claude.limits.map(l => l.label), ['Weekly', 'Five Hour']);
+  assert.equal(claude.limits[0].remainingPct, 50);
+  assert.equal(claude.limits[0].refresh, '5d');
+  assert.equal(claude.limits[1].remainingPct, 20);
+  assert.equal(claude.limits[1].refresh, '2h');
+});
+
+test('parseAgyUsage adapts to a group with only a weekly limit', () => {
+  const panel = `
+Account: solo@example.com
+
+GEMINI MODELS
+Models within this group: Gemini Flash, Gemini Pro
+Weekly Limit
+[██████████] 100.00%
+Quota available
+`;
+  const [g] = parseAgyUsage(panel).groups;
+  assert.equal(g.limits.length, 1);
+  assert.equal(g.limits[0].label, 'Weekly');
+  assert.equal(g.limits[0].full, true);
+});
+
+test('parseAgyUsage ignores the descriptive footer, not just headers', () => {
+  // a line ending in lowercase "limit." must not open a phantom limit section
+  const panel = `
+Account: a@b.com
+
+GEMINI MODELS
+Weekly Limit
+[██████████] 100.00%
+Quota available
+Within each group, models share a weekly limit.
+`;
+  const [g] = parseAgyUsage(panel).groups;
+  assert.equal(g.limits.length, 1);
 });
 
 test('parseAgyUsage returns an error object for unparseable input', () => {

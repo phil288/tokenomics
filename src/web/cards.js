@@ -239,6 +239,13 @@ function agyGroupTitle(name) {
     .replace(/Gpt/g, 'GPT');
 }
 
+// agy gives labels like "Weekly", "Five Hour" (the " Limit" suffix is stripped
+// in the parser). Tidy the common time windows; pass anything else through.
+function agyLimitLabel(label) {
+  const s = String(label || '').trim();
+  return /^five[\s-]?hour$/i.test(s) ? '5-hour' : s;
+}
+
 export function renderAntigravity(d) {
   if (!d || d.disabled) return '';
   const hasGroups = d.groups && d.groups.length;
@@ -256,9 +263,14 @@ export function renderAntigravity(d) {
       <div style="margin-bottom:6px;">
         <div style="font-weight:600; font-size:12px;">${agyGroupTitle(g.name)}</div>
         ${g.models ? `<div class="prog-sub" style="opacity:0.55; font-size:11px;">${g.models}</div>` : ''}
-      </div>
-      ${usageBar('Weekly', remPct(g.weekly), agyLimitSub(g.weekly), 'var(--antigravity)', 10)}
-      ${usageBar('5-hour', remPct(g.fiveHour), agyLimitSub(g.fiveHour), 'var(--antigravity)', 16)}`;
+      </div>`;
+    // Render exactly the limits agy reported for this group — no assumptions
+    // about which windows exist (varies by tier).
+    const limits = g.limits || [];
+    limits.forEach((lim, i) => {
+      const mb = i === limits.length - 1 ? 16 : 10; // extra gap after the last bar
+      html += usageBar(agyLimitLabel(lim.label), remPct(lim), agyLimitSub(lim), 'var(--antigravity)', mb);
+    });
   }
 
   if (d.stale) {
