@@ -76,6 +76,13 @@ test('server polls the version on a slow timer + at startup', () => {
   assert.match(src, /VERSION_POLL_MS/);
 });
 
+test('version poll defaults to a 1-hour interval', () => {
+  const src = read('server.js');
+  // Default must be 3600000ms (1h) so a fresh release surfaces within the hour,
+  // not only after a service restart.
+  assert.match(src, /VERSION_POLL_MS\s*=\s*Number\(process\.env\.VERSION_POLL_MS\)\s*\|\|\s*3600000/);
+});
+
 test('index.html has the update-banner element', () => {
   const html = read('index.html');
   assert.match(html, /id="update-banner"/);

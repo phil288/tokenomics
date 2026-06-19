@@ -11,8 +11,8 @@ const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
 const HISTORY_INTERVAL_MS = Number(process.env.HISTORY_INTERVAL_MS) || 60000;
 const ANTIGRAVITY_POLL_MS = Number(process.env.ANTIGRAVITY_POLL_MS) || 300000;
 // Tags change rarely + unauthenticated GitHub API is rate-limited, so the
-// update check runs on a slow timer (default 6h) out of the fast SSE loop.
-const VERSION_POLL_MS = Number(process.env.VERSION_POLL_MS) || 21600000;
+// update check runs on a slow timer (default 1h) out of the fast SSE loop.
+const VERSION_POLL_MS = Number(process.env.VERSION_POLL_MS) || 3600000;
 
 const clients = new Set();
 
