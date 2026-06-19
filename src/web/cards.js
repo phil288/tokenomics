@@ -55,7 +55,7 @@ export function renderModels(byModel) {
 
 // Install pill for the RTK CLI, driven by collectors.js's `rtk --version` probe.
 // Installed = green (with version); missing = red.
-function rtkInstallPill(inst) {
+export function rtkInstallPill(inst) {
   if (!inst) return '';
   if (inst.installed) {
     const col = 'var(--success, #3fb950)';
@@ -345,7 +345,7 @@ export function renderClaude(d) {
 
 // Live up/down pill for the Headroom proxy, driven by collectors.js's /health
 // probe. Healthy = green, degraded = amber, down = red.
-function headroomHealthPill(h) {
+export function headroomHealthPill(h) {
   if (!h) return '';
   let col, label, detail;
   if (h.ok) {

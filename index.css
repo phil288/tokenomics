@@ -1385,6 +1385,12 @@ header h1 span {
 }
 
 /* ---- Activity card: per-operation before→after feed ---- */
+.act-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
 .act-filters {
   display: flex;
   gap: 6px;

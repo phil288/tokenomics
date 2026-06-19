@@ -5,6 +5,7 @@
 // the actual prompt/response text, so there is nothing more to show per row.
 import { state } from './state.js';
 import { ht, timeAgo } from './format.js';
+import { rtkInstallPill, headroomHealthPill } from './cards.js';
 
 const SOURCE_META = {
   'rtk': { name: 'RTK', color: 'var(--rtk)' },
@@ -93,6 +94,18 @@ function rowHtml(r) {
     </div>`;
 }
 
+// RTK-install + Headroom-health pills, mirrored from the latest SSE snapshot
+// (state.lastStats) so the Activity view shows the same live status as the
+// Overview cards. Empty until the first stats frame arrives.
+function statusStrip() {
+  const s = state.lastStats || {};
+  const pills = [
+    rtkInstallPill(s.rtk && s.rtk.install),
+    headroomHealthPill(s.headroom && s.headroom.health),
+  ].filter(Boolean).join('');
+  return pills ? `<div class="act-status">${pills}</div>` : '';
+}
+
 export function renderActivity(rows, filter) {
   rows = Array.isArray(rows) ? rows : [];
   filter = filter || 'all';
@@ -104,6 +117,7 @@ export function renderActivity(rows, filter) {
     ? visible.map(rowHtml).join('')
     : '<div class="act-empty">No operations recorded yet.</div>';
   return `
+    ${statusStrip()}
     <div class="act-filters">${chips}</div>
     <div class="act-list">${body}</div>`;
 }

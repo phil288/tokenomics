@@ -7,7 +7,7 @@ import {
   renderAntigravity, renderClaude, renderHdr, renderUpdateBanner,
 } from './cards.js';
 import { drawRTKChart, fetchHistory, initHistoryControls } from './charts.js';
-import { fetchActivity, initActivity, initDashboardTabs } from './activity.js';
+import { fetchActivity, initActivity, initDashboardTabs, paintActivity } from './activity.js';
 import { initTheme } from './theme.js';
 import { initLayout, reapplyCardLayout } from './layout.js';
 import { initSettings, initSettingsAndPricing } from './settings.js';
@@ -61,6 +61,11 @@ function render(stats) {
     const wrap = document.getElementById('rtk-chart-wrap');
     if (wrap) wrap.style.display = 'none';
   }
+
+  // Keep the Activity view's status strip live: repaint it from the fresh
+  // snapshot when that tab is showing (its rows come from /api/activity, but the
+  // RTK/Headroom pills mirror these SSE stats).
+  if (document.getElementById('view-activity')?.classList.contains('active')) paintActivity();
 
   renderVersion(stats.version);
   renderUpdate(stats.version);

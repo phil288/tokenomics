@@ -12,6 +12,7 @@ const HTML = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const ACTIVITY_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'activity.js'), 'utf8');
 const MAIN_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'main.js'), 'utf8');
 const STATE_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'state.js'), 'utf8');
+const CARDS_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'cards.js'), 'utf8');
 
 test('dashboard exposes Overview + Activity tabs, each tab has a matching view', () => {
   // tab buttons
@@ -70,4 +71,29 @@ test('main.js imports and bootstraps the activity view', () => {
 test('state.js holds activity feed + filter state', () => {
   assert.match(STATE_JS, /\bactivity\b\s*:/, 'state.js must have an activity field');
   assert.match(STATE_JS, /\bactivityFilter\b\s*:/, 'state.js must have an activityFilter field');
+});
+
+test('cards.js exports the RTK-install + Headroom-health pill helpers', () => {
+  assert.match(CARDS_JS, /export function rtkInstallPill\b/, 'rtkInstallPill must be exported for reuse');
+  assert.match(CARDS_JS, /export function headroomHealthPill\b/, 'headroomHealthPill must be exported for reuse');
+});
+
+test('Activity view renders an RTK/Headroom status strip from the SSE snapshot', () => {
+  // pills are imported from cards.js (single source of truth, no duplication)
+  assert.match(ACTIVITY_JS, /import \{ rtkInstallPill, headroomHealthPill \} from '\.\/cards\.js'/, 'activity.js must import the pill helpers');
+  // strip is built from the last SSE snapshot and emitted as .act-status
+  assert.match(ACTIVITY_JS, /state\.lastStats/, 'status strip must read state.lastStats');
+  assert.match(ACTIVITY_JS, /act-status/, 'status strip must render an .act-status container');
+  assert.match(ACTIVITY_JS, /rtkInstallPill\(/, 'strip must render the RTK install pill');
+  assert.match(ACTIVITY_JS, /headroomHealthPill\(/, 'strip must render the Headroom health pill');
+});
+
+test('main.js repaints the Activity strip live while that tab is active', () => {
+  assert.match(MAIN_JS, /paintActivity/, 'main.js must repaint activity on new SSE frames');
+  assert.match(MAIN_JS, /view-activity/, 'repaint must be gated on the activity view being active');
+});
+
+test('.act-status has a stylesheet rule', () => {
+  const CSS = fs.readFileSync(path.join(ROOT, 'index.css'), 'utf8');
+  assert.match(CSS, /\.act-status\s*\{/, 'index.css must style .act-status');
 });
