@@ -7,6 +7,7 @@ import {
   renderAntigravity, renderClaude, renderHdr,
 } from './cards.js';
 import { drawRTKChart, fetchHistory, initHistoryControls } from './charts.js';
+import { fetchActivity, initActivity, initDashboardTabs } from './activity.js';
 import { initTheme } from './theme.js';
 import { initLayout, reapplyCardLayout } from './layout.js';
 import { initSettings, initSettingsAndPricing } from './settings.js';
@@ -110,6 +111,7 @@ export async function manualRefresh() {
   try {
     const r = await fetch('/api/stats');
     render(await r.json());
+    fetchActivity();
   } catch (err) { console.error(err); }
   btn.disabled = false;
 }
@@ -138,6 +140,11 @@ connect();
 initHistoryControls();
 fetchHistory();
 setInterval(fetchHistory, 60000);
+
+initDashboardTabs();
+initActivity();
+fetchActivity();
+setInterval(fetchActivity, 60000);
 
 initLayout();         // grab board refs + wire drag before any applyLayout()
 initSettings();

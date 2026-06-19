@@ -577,6 +577,177 @@ async function collectLastUsed(headroom) {
   return { rtk: maxRtkLastUsed(), caveman, claude, headroom: headroomLastUsed(headroom) };
 }
 
+// ---- Activity feed: per-operation before→after token records ----
+// Three sources expose granular per-op token data. NB: no tool persists the
+// actual prompt/response TEXT — only token counts + labels:
+//   RTK history.db `commands`     → original_cmd, input→output tokens per command
+//   Headroom session_stats.jsonl  → per MCP-compress event input→output tokens
+//   Headroom logs/proxy.log PERF  → per proxied request tok_before→tok_after
+// Served lazily via /api/activity (NOT the 10s SSE loop): proxy.log is large and
+// growing, so we only read its tail.
+
+function headroomSessionStatsPath() {
+  return settings.HEADROOM_SESSION_STATS_PATH || process.env.HEADROOM_SESSION_STATS_PATH
+    || path.join(HOME, '.headroom', 'session_stats.jsonl');
+}
+function headroomProxyLogPath() {
+  return settings.HEADROOM_PROXY_LOG_PATH || process.env.HEADROOM_PROXY_LOG_PATH
+    || path.join(HOME, '.headroom', 'logs', 'proxy.log');
+}
+
+// Read the last `maxBytes` of a (possibly large, growing) text file. Returns ''
+// on any error. Drops the first (likely partial) line when the file was longer
+// than maxBytes, so callers never parse a half-line.
+function tailFileSync(filePath, maxBytes = 65536) {
+  let fd = null;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const size = fs.fstatSync(fd).size;
+    const start = Math.max(0, size - maxBytes);
+    const len = size - start;
+    if (len <= 0) return '';
+    const buf = Buffer.allocUnsafe(len);
+    fs.readSync(fd, buf, 0, len, start);
+    let text = buf.toString('utf8');
+    if (start > 0) { const nl = text.indexOf('\n'); if (nl !== -1) text = text.slice(nl + 1); }
+    return text;
+  } catch { return ''; }
+  finally { if (fd !== null) try { fs.closeSync(fd); } catch { } }
+}
+
+function matchNum(s, re) { const m = re.exec(s); return m ? Number(m[1]) : null; }
+
+// One Headroom proxy.log "PERF" line → {model, before, after, saved, ts} or null.
+// Example: "2026-06-19 14:29:19,130 - headroom.proxy - INFO - [hr_…] PERF
+//           model=claude-opus-4-8 msgs=2 tok_before=6490 tok_after=1490 tok_saved=5000 …"
+function parseProxyPerfLine(line) {
+  if (!line || line.indexOf(' PERF ') === -1) return null;
+  const before = matchNum(line, /tok_before=(\d+)/);
+  const after = matchNum(line, /tok_after=(\d+)/);
+  if (before === null || after === null) return null;
+  const saved = matchNum(line, /tok_saved=(-?\d+)/);
+  const model = (/model=(\S+)/.exec(line) || [])[1] || 'request';
+  const tsM = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})[.,](\d+)/.exec(line);
+  let ts = null;
+  if (tsM) { const t = Date.parse(`${tsM[1]}T${tsM[2]}.${tsM[3]}`); if (!Number.isNaN(t)) ts = t; }
+  return { model, before, after, saved: saved === null ? Math.max(0, before - after) : saved, ts };
+}
+
+// One Headroom session_stats.jsonl line → compress event or null (skips
+// `retrieve` and any non-compress entries). timestamp is unix seconds → ms.
+function parseSessionStatLine(line) {
+  const s = line && line.trim();
+  if (!s) return null;
+  let e; try { e = JSON.parse(s); } catch { return null; }
+  if (!e || e.type !== 'compress') return null;
+  const before = Number(e.input_tokens) || 0;
+  const after = Number(e.output_tokens) || 0;
+  return {
+    before, after,
+    saved: Math.max(0, before - after),
+    savedPct: typeof e.savings_percent === 'number' ? e.savings_percent : null,
+    strategy: e.strategy || 'compress',
+    ts: typeof e.timestamp === 'number' ? Math.round(e.timestamp * 1000) : null,
+  };
+}
+
+// Newest `limit` rows from every active RTK history.db, read straight from
+// SQLite (the CLI only exposes aggregates). Returns [] when sqlite/DB missing.
+function readRtkActivity(limit) {
+  let DatabaseSync;
+  try { ({ DatabaseSync } = require('node:sqlite')); } catch { return []; }
+  const rows = [];
+  for (const home of rtkDataHomes()) {
+    const dbPath = path.join(home, 'rtk', 'history.db');
+    try {
+      if (!fs.existsSync(dbPath)) continue;
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      const r = db.prepare(
+        'SELECT timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct '
+        + 'FROM commands ORDER BY id DESC LIMIT ?'
+      ).all(limit);
+      db.close();
+      for (const row of r) rows.push(row);
+    } catch { }
+  }
+  return rows;
+}
+
+function clampLimit(n, def = 50, max = 200) {
+  n = Number(n);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(1, Math.min(max, Math.round(n)));
+}
+
+function truncLabel(s, n = 80) {
+  s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+// Merge the three sources into one normalized, newest-first activity feed. Each
+// row: { source, ts, label, detail, before, after, saved, pct }.
+async function collectActivity({ limit = 50 } = {}) {
+  limit = clampLimit(limit);
+  const out = [];
+
+  // RTK — per-command original→rtk rewrite + input→output tokens
+  for (const r of readRtkActivity(limit)) {
+    const before = Number(r.input_tokens) || 0;
+    const after = Number(r.output_tokens) || 0;
+    const saved = Number(r.saved_tokens);
+    const ts = r.timestamp ? Date.parse(r.timestamp) : NaN;
+    out.push({
+      source: 'rtk',
+      ts: Number.isNaN(ts) ? null : ts,
+      label: truncLabel(r.original_cmd || r.rtk_cmd || 'rtk command'),
+      detail: r.rtk_cmd || null,
+      before, after,
+      saved: Number.isFinite(saved) ? saved : Math.max(0, before - after),
+      pct: typeof r.savings_pct === 'number' ? r.savings_pct : (before ? ((before - after) / before) * 100 : 0),
+    });
+  }
+
+  // Headroom MCP compress events (tail of session_stats.jsonl)
+  const statRaw = tailFileSync(headroomSessionStatsPath());
+  const compressEvents = [];
+  for (const line of statRaw ? statRaw.split('\n') : []) {
+    const e = parseSessionStatLine(line);
+    if (e) compressEvents.push(e);
+  }
+  for (const e of compressEvents.slice(-limit)) {
+    out.push({
+      source: 'headroom-compress',
+      ts: e.ts,
+      label: truncLabel(e.strategy),
+      detail: null,
+      before: e.before, after: e.after, saved: e.saved,
+      pct: e.savedPct != null ? e.savedPct : (e.before ? (e.saved / e.before) * 100 : 0),
+    });
+  }
+
+  // Headroom proxy requests — PERF lines from the tail of proxy.log
+  const logRaw = tailFileSync(headroomProxyLogPath());
+  const perfEvents = [];
+  for (const line of logRaw ? logRaw.split('\n') : []) {
+    const e = parseProxyPerfLine(line);
+    if (e) perfEvents.push(e);
+  }
+  for (const e of perfEvents.slice(-limit)) {
+    out.push({
+      source: 'headroom-proxy',
+      ts: e.ts,
+      label: truncLabel(e.model),
+      detail: null,
+      before: e.before, after: e.after, saved: e.saved,
+      pct: e.before ? (e.saved / e.before) * 100 : 0,
+    });
+  }
+
+  // newest first; rows without a ts sink to the bottom but stay visible
+  out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return out.slice(0, limit);
+}
+
 async function collectStats() {
   const [rtk, caveman, headroom, cursor] = await Promise.all([
     collectRTK(), collectCaveman(), collectHeadroom(), collectCursor()
@@ -607,5 +778,8 @@ module.exports = {
   parseTextRTK,
   parseRtkVal,
   collectLastUsed,
-  collectStats
+  collectStats,
+  collectActivity,
+  parseProxyPerfLine,
+  parseSessionStatLine,
 };

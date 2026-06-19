@@ -32,6 +32,14 @@
     </div>
   </header>
 
+  <nav class="dash-tabs" id="dash-tabs" role="tablist" aria-label="Dashboards">
+    <button class="dash-tab active" data-view="overview" role="tab">Overview</button>
+    <button class="dash-tab" data-view="activity" role="tab">Activity</button>
+  </nav>
+
+  <!-- Overview view: hero + all source cards -->
+  <div class="view active" id="view-overview" data-view="overview">
+
   <div class="hero">
     <div class="hero-main">
       <div class="hero-num" id="hero-num">—</div>
@@ -113,6 +121,20 @@
         </div>
         <div id="agy"><span class="loading">…</span></div>
       </div>
+    </div>
+  </div>
+  <!-- /Tab: overview -->
+  </div>
+
+  <!-- Activity view: per-operation before→after token feed -->
+  <div class="view" id="view-activity" data-view="activity">
+    <div class="card" id="activity-card">
+      <div class="card-header">
+        <span class="card-title">Activity <span class="card-sub">before → after tokens, per operation</span></span>
+        <div class="accent" style="background:var(--rtk)"></div>
+      </div>
+      <div class="act-note">No tool stores the raw prompt/response text — each row shows the operation label and how its token count shrank. Sources: RTK commands, Headroom compressions, Headroom proxied requests.</div>
+      <div id="activity"><span class="loading">…</span></div>
     </div>
   </div>
 

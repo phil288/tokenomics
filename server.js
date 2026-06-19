@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { getSettings, updateSettings } = require('./src/settings');
-const { collectStats, pollAntigravity } = require('./src/collectors');
+const { collectStats, pollAntigravity, collectActivity } = require('./src/collectors');
 const { history, recordSnapshot, clearHistory } = require('./src/history');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -85,6 +85,13 @@ const server = http.createServer(async (req, res) => {
   } else if (req.url === '/api/history' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(history));
+  } else if (req.url.startsWith('/api/activity') && req.method === 'GET') {
+    // Per-operation before→after token feed. Lazy (not in the SSE loop) since it
+    // tails Headroom's large proxy.log; reads RTK's SQLite + Headroom logs.
+    const limit = Number(new URL(req.url, 'http://localhost').searchParams.get('limit')) || 50;
+    const rows = await collectActivity({ limit });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(rows));
   } else if (req.url === '/api/history/reset' && req.method === 'POST') {
     // Reset all stats: wipe the recorded trend history. Live tool totals are
     // owned by the tools themselves and simply repopulate on the next refresh.

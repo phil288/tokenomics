@@ -154,6 +154,20 @@ test('GET /api/history returns a JSON array', async () => {
   assert.ok(Array.isArray(await res.json()));
 });
 
+test('GET /api/activity returns a capped JSON array of before→after rows', async () => {
+  const res = await fetch(base + '/api/activity?limit=5');
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /application\/json/);
+  const rows = await res.json();
+  assert.ok(Array.isArray(rows));
+  assert.ok(rows.length <= 5, 'limit honored');
+  for (const r of rows) {
+    for (const k of ['source', 'ts', 'label', 'before', 'after', 'saved', 'pct']) {
+      assert.ok(k in r, `activity row missing key: ${k}`);
+    }
+  }
+});
+
 test('GET /api/stats returns the full stats shape (collectors degrade gracefully)', async () => {
   const res = await fetch(base + '/api/stats');
   assert.equal(res.status, 200);

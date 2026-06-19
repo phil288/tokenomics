@@ -1343,3 +1343,139 @@ header h1 span {
 .toast.err {
   background: var(--danger);
 }
+
+/* ---- Dashboard tabs + views ---- */
+.dash-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+.dash-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.dash-tab:hover {
+  color: var(--text);
+}
+.dash-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--rtk);
+}
+.view {
+  display: none;
+}
+.view.active {
+  display: block;
+}
+.act-note {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+/* ---- Activity card: per-operation before→after feed ---- */
+.act-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.act-filters .act-filter {
+  padding: 3px 10px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.act-filters .act-filter.active {
+  background: var(--rtk);
+  color: #fff;
+  opacity: 1;
+}
+.act-list {
+  max-height: 68vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.act-row {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-2, rgba(255, 255, 255, 0.02));
+}
+.act-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.act-src {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+.act-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.act-when {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+.act-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 5px;
+}
+.act-bar-track {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.act-bar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.act-figs {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.act-ba {
+  color: var(--muted);
+}
+.act-saved {
+  font-weight: 700;
+}
+.act-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 16px 4px;
+  text-align: center;
+}

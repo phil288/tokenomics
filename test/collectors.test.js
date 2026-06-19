@@ -3,7 +3,14 @@
 // turn raw tool output into the structured shapes the dashboard renders.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseAgyUsage, parseTextRTK, parseRtkVal } = require('../src/collectors');
+const {
+  parseAgyUsage, parseTextRTK, parseRtkVal,
+  parseProxyPerfLine, parseSessionStatLine, collectActivity,
+} = require('../src/collectors');
+const os = require('node:os');
+const fs = require('node:fs');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
 
 // ---- parseRtkVal: human-readable token counts → numbers ----
 test('parseRtkVal expands k/M/B suffixes and plain numbers', () => {
@@ -149,4 +156,98 @@ test('parseAgyUsage returns an error object for unparseable input', () => {
   const r = parseAgyUsage('not a usage panel at all');
   assert.ok(r.error, 'expected an error field');
   assert.equal(r.groups, undefined);
+});
+
+// ---- Activity feed: per-operation before→after records ----
+
+test('parseProxyPerfLine extracts before/after/saved/model/ts from a PERF line', () => {
+  const line = '2026-06-19 14:29:19,130 - headroom.proxy - INFO - [hr_x] PERF '
+    + 'model=claude-opus-4-8 msgs=2 tok_before=6490 tok_after=1490 tok_saved=5000 cache_read=24713 cache_hit_pct=98';
+  const r = parseProxyPerfLine(line);
+  assert.equal(r.model, 'claude-opus-4-8');
+  assert.equal(r.before, 6490);
+  assert.equal(r.after, 1490);
+  assert.equal(r.saved, 5000);
+  assert.equal(typeof r.ts, 'number');
+});
+
+test('parseProxyPerfLine falls back to before-after when tok_saved missing', () => {
+  const r = parseProxyPerfLine('... PERF model=m tok_before=100 tok_after=40');
+  assert.equal(r.saved, 60);
+});
+
+test('parseProxyPerfLine returns null for non-PERF / malformed lines', () => {
+  assert.equal(parseProxyPerfLine('2026-06-19 - headroom.proxy - INFO - event=outbound_request'), null);
+  assert.equal(parseProxyPerfLine('garbage PERF without tokens'), null);
+  assert.equal(parseProxyPerfLine(''), null);
+});
+
+test('parseSessionStatLine parses compress events and skips retrieve', () => {
+  const c = parseSessionStatLine(JSON.stringify({
+    type: 'compress', input_tokens: 400, output_tokens: 180, savings_percent: 55, strategy: 'router:dedup', timestamp: 1781870000,
+  }));
+  assert.equal(c.before, 400);
+  assert.equal(c.after, 180);
+  assert.equal(c.saved, 220);
+  assert.equal(c.savedPct, 55);
+  assert.equal(c.strategy, 'router:dedup');
+  assert.equal(c.ts, 1781870000 * 1000);
+  assert.equal(parseSessionStatLine(JSON.stringify({ type: 'retrieve', hash: 'abc', timestamp: 1 })), null);
+  assert.equal(parseSessionStatLine('not json'), null);
+});
+
+test('collectActivity merges RTK + Headroom sources, sorts newest-first, caps', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-act-'));
+  try {
+    // RTK history.db fixture
+    fs.mkdirSync(path.join(dir, 'rtk'));
+    const db = new DatabaseSync(path.join(dir, 'rtk', 'history.db'));
+    db.exec('CREATE TABLE commands (id INTEGER PRIMARY KEY, timestamp TEXT, original_cmd TEXT, '
+      + 'rtk_cmd TEXT, input_tokens INTEGER, output_tokens INTEGER, saved_tokens INTEGER, savings_pct REAL)');
+    db.prepare('INSERT INTO commands (timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct) '
+      + 'VALUES (?,?,?,?,?,?,?)').run('2026-06-19T14:00:00Z', 'git status', 'rtk git status', 1000, 200, 800, 80);
+    db.close();
+
+    // Headroom session_stats.jsonl fixture (one compress + one retrieve)
+    const stats = path.join(dir, 'session_stats.jsonl');
+    fs.writeFileSync(stats, [
+      JSON.stringify({ type: 'compress', input_tokens: 400, output_tokens: 180, savings_percent: 55, strategy: 'router:dedup', timestamp: 1781870000 }),
+      JSON.stringify({ type: 'retrieve', hash: 'abc', timestamp: 1781870001 }),
+    ].join('\n') + '\n');
+
+    // Headroom proxy.log fixture (one PERF line)
+    const log = path.join(dir, 'proxy.log');
+    fs.writeFileSync(log, '2026-06-19 14:29:19,130 - headroom.proxy - INFO - [hr_x] PERF '
+      + 'model=claude-opus-4-8 msgs=2 tok_before=6490 tok_after=1490 tok_saved=5000 cache_read=1 cache_hit_pct=98\n');
+
+    process.env.RTK_DATA_HOME = dir;
+    process.env.HEADROOM_SESSION_STATS_PATH = stats;
+    process.env.HEADROOM_PROXY_LOG_PATH = log;
+
+    const rows = await collectActivity({ limit: 50 });
+    const by = src => rows.filter(r => r.source === src);
+    assert.equal(by('rtk').length, 1, 'one rtk row');
+    assert.equal(by('headroom-compress').length, 1, 'compress kept, retrieve skipped');
+    assert.equal(by('headroom-proxy').length, 1, 'one proxy row');
+
+    const rtk = by('rtk')[0];
+    assert.equal(rtk.label, 'git status');
+    assert.equal(rtk.detail, 'rtk git status');
+    assert.equal(rtk.before, 1000);
+    assert.equal(rtk.after, 200);
+    assert.equal(rtk.saved, 800);
+
+    // newest-first by ts
+    for (let i = 1; i < rows.length; i++) {
+      assert.ok((rows[i - 1].ts || 0) >= (rows[i].ts || 0), 'rows sorted newest-first');
+    }
+    // limit cap honored
+    const capped = await collectActivity({ limit: 2 });
+    assert.ok(capped.length <= 2);
+  } finally {
+    delete process.env.RTK_DATA_HOME;
+    delete process.env.HEADROOM_SESSION_STATS_PATH;
+    delete process.env.HEADROOM_PROXY_LOG_PATH;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
