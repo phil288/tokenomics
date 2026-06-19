@@ -1,12 +1,12 @@
 name: Release
 
-# Cut a release whenever package.json's "version" lands on main without a
-# matching tag yet. Bumping the version in package.json IS the release trigger
-# — this keeps the tag, the GitHub release, and the dashboard's self-update
-# check (which compares against package.json / the latest tag) in lockstep.
+# Manual-only. Cut a release by running this workflow from the Actions tab
+# (or `gh workflow run release.yml`). It tags `v<package.json version>` — so
+# bump the version in package.json first, then launch. This keeps the tag, the
+# GitHub release, and the dashboard's self-update check (which compares against
+# package.json / the latest tag) in lockstep.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 # Allow the job to push a tag and create a release with the built-in token.
 permissions:
