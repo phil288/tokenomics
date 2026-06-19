@@ -10,27 +10,27 @@ const path = require('path');
 const wf = fs.readFileSync(
   path.join(__dirname, '..', '.github', 'workflows', 'release.yml'), 'utf8');
 
-test('release workflow is manual-only (workflow_dispatch)', () => {
+test('release workflow is manual-only with a bump-level input', () => {
   assert.match(wf, /workflow_dispatch:/);
   assert.doesNotMatch(wf, /^\s*push:/m);
+  assert.match(wf, /bump:/);
+  assert.match(wf, /options:\s*\[patch,\s*minor,\s*major\]/);
 });
 
-test('release workflow derives the version from package.json', () => {
+test('release workflow bumps the version automatically and derives the tag', () => {
+  assert.match(wf, /npm version "\$\{\{ inputs\.bump \}\}" --no-git-tag-version/);
   assert.match(wf, /require\(['"]\.\/package\.json['"]\)\.version/);
-});
-
-test('release workflow is idempotent (skips when the tag already exists)', () => {
-  assert.match(wf, /git ls-remote --exit-code --tags origin/);
-  assert.match(wf, /exists == 'false'/);
 });
 
 test('release workflow gates on the test suite before tagging', () => {
   assert.match(wf, /node --test/);
 });
 
-test('release workflow can push tags and create releases', () => {
+test('release workflow commits the bump, pushes the tag, and creates a release', () => {
   assert.match(wf, /contents:\s*write/);
+  assert.match(wf, /git commit -m "chore\(release\): \$TAG"/);
+  assert.match(wf, /git push origin HEAD:main/);
   assert.match(wf, /git push origin "\$TAG"/);
-  assert.match(wf, /gh release create "\$TAG"/);
+  assert.match(wf, /gh release create/);
   assert.match(wf, /--generate-notes/);
 });
