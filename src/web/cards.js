@@ -87,12 +87,27 @@ export function renderRTK(d, lastUsed) {
   `;
 }
 
+// Active/inactive status pill for Caveman, driven by the mode in
+// ~/.claude/.caveman-active. A real level (full/lite/ultra) = active (green,
+// mode-colored); off / unknown / missing file = inactive (grey).
+function cavemanStatusPill(mode) {
+  const active = /^(full|lite|ultra)$/i.test(mode);
+  if (active) {
+    const col = MODE_COLORS[mode] || 'var(--success, #3fb950)';
+    const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
+    const sub = `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">${mode}</span>`;
+    return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}Caveman active${sub}</div>`;
+  }
+  const col = '#8b949e';
+  const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
+  return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}Caveman inactive</div>`;
+}
+
 export function renderCav(d, lastUsed) {
   if (!d) return '<div class="err">No Caveman data</div>';
   const mode = d.mode || 'unknown';
-  const col = MODE_COLORS[mode] || '#8b949e';
   return `
-    <div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${mode}</div>
+    ${cavemanStatusPill(mode)}
     <div class="big" style="color:var(--caveman)">${ht(d.total_saved_tokens || 0)}</div>
     <div class="big-label">est. tokens saved</div>
     <div class="rows">
