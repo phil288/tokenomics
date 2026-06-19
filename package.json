@@ -1,6 +1,6 @@
 {
   "name": "tokenomics",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Tokenomics — real-time browser dashboard for RTK, Caveman, and Headroom token-savings stats, with time-series history and per-model cost tracking.",
   "type": "commonjs",
   "main": "server.js",
