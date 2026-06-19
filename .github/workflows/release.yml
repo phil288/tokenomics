@@ -1,0 +1,63 @@
+name: Release
+
+# Cut a release whenever package.json's "version" lands on main without a
+# matching tag yet. Bumping the version in package.json IS the release trigger
+# — this keeps the tag, the GitHub release, and the dashboard's self-update
+# check (which compares against package.json / the latest tag) in lockstep.
+on:
+  push:
+    branches: [main]
+
+# Allow the job to push a tag and create a release with the built-in token.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # need full history + tags to detect an existing release
+
+      - name: Read version from package.json
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this version is already tagged
+        id: check
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists — nothing to release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG not found — will create a release."
+          fi
+
+      - uses: actions/setup-node@v6
+        if: steps.check.outputs.exists == 'false'
+        with:
+          node-version: '24.x'
+
+      # Gate the release on a green suite — never tag a broken build.
+      # Zero deps, so nothing to install.
+      - name: Run tests
+        if: steps.check.outputs.exists == 'false'
+        run: node --test
+
+      - name: Create tag and GitHub release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            --target "$GITHUB_SHA"
