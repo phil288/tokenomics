@@ -219,7 +219,10 @@ Understanding how each source is resolved is crucial for debugging:
 - Parses the JSON lines file `~/.claude/.caveman-history.jsonl` to calculate session counts, total output tokens, and estimated USD saved. Only the latest log entry per `session_id` is counted.
 
 ### 3. Headroom
-- Reads and parses `~/.headroom/subscription_state.json`.
+- Headroom keeps **two** files (per its filesystem-contract); `collectHeadroom()` reads both:
+  - **Savings ledger** — `~/.headroom/proxy_savings.json` (`HEADROOM_SAVINGS_PATH`). Authoritative source, matching what `headroom perf` reports: `lifetime.tokens_saved`, `lifetime.compression_savings_usd`, `lifetime.requests`, `display_session.savings_percent`. The Headroom card headline, the hero "Headroom" chip, and the history "saved" trend lines all come from here.
+  - **Subscription state** — `~/.headroom/subscription_state.json` (`HEADROOM_SUBSCRIPTION_STATE_PATH`). Holds quota windows (`latest.five_hour` / `seven_day`, used by the Claude card) and raw `window_tokens` telemetry. ⚠️ `window_tokens` is **rolling per quota window and resets each window** — it is *usage telemetry, not savings*. Never treat `window_tokens.cache_reads` as a cumulative saving (old code did `cache_reads × 0.9`, producing a phantom sawtooth that did not match `headroom perf`).
+- `collectHeadroom()` returns the subscription object with the savings ledger attached as `.savings`.
 
 ### 4. Cursor
 - Queries the Connect RPC endpoint `https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` to fetch account quotas and billing cycles.

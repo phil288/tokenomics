@@ -8,11 +8,6 @@ export const MODE_COLORS = {
   off: '#6b7280', commit: '#58a6ff', review: '#3fb950', compress: '#38bdf8',
 };
 
-// cache reads are billed ~10% of input price → ~90% saved vs uncached
-export function cacheSavings(wt) {
-  return Math.round((wt.cache_reads || 0) * 0.9);
-}
-
 // Universal Claude billing ratios (in units of that model's input token):
 // output 5×, cache-read 0.1×, cache-write-5m 1.25×, cache-write-1h 2×.
 export function modelRaw(m) {

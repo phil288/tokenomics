@@ -71,6 +71,10 @@ function compactSnapshot(stats) {
 
   const wt = (stats.headroom && stats.headroom.window_tokens) || {};
   const lt = (stats.headroom && stats.headroom.latest) || {};
+  // Authoritative Headroom savings ledger (proxy_savings.json) — cumulative.
+  const sav = (stats.headroom && stats.headroom.savings) || {};
+  const life = sav.lifetime || {};
+  const sess = sav.display_session || {};
   const models = {};
   let totalUsd = 0, totalRawUsd = 0, totalWtd = 0, totalRaw = 0;
 
@@ -88,12 +92,16 @@ function compactSnapshot(stats) {
   }
 
   row.hr = {
-    cacheSave: Math.round((wt.cache_reads || 0) * 0.9),
+    // authoritative savings (monotonic — what `headroom perf` reports)
+    savedTokens: life.tokens_saved || 0,
+    savedUsd: +(life.compression_savings_usd || 0).toFixed(4),
+    requests: life.requests || 0,
+    savingsPct: sess.savings_percent || 0,
+    // live window telemetry (usage cost, not savings)
     raw: totalRaw,
     wtd: totalWtd,
     usd: +totalUsd.toFixed(4),
     rawUsd: +totalRawUsd.toFixed(4),
-    saved: +(totalRawUsd - totalUsd).toFixed(4),
     q5: (lt.five_hour && lt.five_hour.utilization_pct) || 0,
     q7: (lt.seven_day && lt.seven_day.utilization_pct) || 0,
     models,
@@ -109,6 +117,18 @@ function recordSnapshot(stats) {
   persistHistory();
 }
 
+// Wipe all recorded trend history (in-memory + on-disk). Mutates the array in
+// place so any reference captured by importers (server.js) stays valid.
+function clearHistory() {
+  history.length = 0;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(HISTORY_FILE, '');
+  } catch (e) {
+    console.error('history clear failed:', e.message);
+  }
+}
+
 // Load history immediately on import
 loadHistory();
 
@@ -117,5 +137,6 @@ module.exports = {
   loadHistory,
   persistHistory,
   compactSnapshot,
-  recordSnapshot
+  recordSnapshot,
+  clearHistory
 };

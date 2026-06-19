@@ -32,7 +32,15 @@ let settings = {
   ANTIGRAVITY_ENABLED: true,
   CURSOR_ACCESS_TOKEN: '',
   RTK_DATA_HOME: '',
+  // Headroom writes savings and subscription state to TWO separate files
+  // (see Headroom's filesystem-contract). HEADROOM_SAVINGS_PATH is the
+  // authoritative savings ledger (proxy_savings.json); the subscription
+  // state file holds quota windows + raw window-token telemetry only.
   HEADROOM_SAVINGS_PATH: '',
+  HEADROOM_SUBSCRIPTION_STATE_PATH: '',
+  // Headroom proxy health endpoint. Probed each refresh to show a live
+  // up/down status pill on the Headroom card. Empty string disables the probe.
+  HEADROOM_HEALTH_URL: 'http://127.0.0.1:8787/health',
   PRICING: DEFAULT_PRICING,
   // Free-drag card layout: { "<card-id>": { x, y, w } } in px. Empty = native grid.
   CARD_LAYOUT: {}
@@ -82,6 +90,12 @@ function updateSettings(parsed) {
   }
   if (parsed.HEADROOM_SAVINGS_PATH !== undefined) {
     settings.HEADROOM_SAVINGS_PATH = parsed.HEADROOM_SAVINGS_PATH.trim();
+  }
+  if (parsed.HEADROOM_HEALTH_URL !== undefined) {
+    settings.HEADROOM_HEALTH_URL = parsed.HEADROOM_HEALTH_URL.trim();
+  }
+  if (parsed.HEADROOM_SUBSCRIPTION_STATE_PATH !== undefined) {
+    settings.HEADROOM_SUBSCRIPTION_STATE_PATH = parsed.HEADROOM_SUBSCRIPTION_STATE_PATH.trim();
   }
   if (Array.isArray(parsed.PRICING)) {
     settings.PRICING = parsed.PRICING;

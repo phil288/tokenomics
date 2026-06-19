@@ -129,19 +129,20 @@ export function renderHistory() {
   const labels = rows.map(r => new Date(r.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   const ds = (data, color, label) => ({ label, data, borderColor: color, backgroundColor: color + '22', fill: false });
 
-  // 1. tokens saved — RTK/Caveman (~100k–400k) share the left axis; Headroom
-  // cache (tens of M) gets its own right axis so the small series stay readable.
+  // 1. tokens saved — all three are genuine cumulative tokens-saved totals now
+  // (Headroom from proxy_savings.json), so they share one axis and one unit.
   drawLine('hc-saved', labels, [
     ds(rows.map(r => r.rtk?.saved || 0), '#58a6ff', 'RTK'),
     ds(rows.map(r => r.cav?.saved || 0), '#d4a72c', 'Caveman'),
-    { ...ds(rows.map(r => r.hr?.cacheSave || 0), '#3fb950', 'Headroom cache (right)'), yAxisID: 'y1' },
-  ], ht, c => ` ${c.dataset.label}: ${ht(c.raw)}`, ht);
+    ds(rows.map(r => r.hr?.savedTokens || 0), '#3fb950', 'Headroom'),
+  ], ht, c => ` ${c.dataset.label}: ${ht(c.raw)}`);
 
-  // 2. cost raw/real/saved
+  // 2. cost — raw/real are live window-telemetry usage cost; saved is the
+  // authoritative Headroom compression savings (proxy_savings.json, USD).
   drawLine('hc-cost', labels, [
     ds(rows.map(r => r.hr?.rawUsd || 0), tc('muted'), 'raw'),
     ds(rows.map(r => r.hr?.usd || 0), '#d4a72c', 'real'),
-    ds(rows.map(r => r.hr?.saved || 0), '#3fb950', 'saved'),
+    ds(rows.map(r => r.hr?.savedUsd || 0), '#3fb950', 'saved'),
   ], v => '$' + v.toFixed(0), c => ` ${c.dataset.label}: ${usdFull(c.raw)}`);
 }
 

@@ -258,11 +258,74 @@ async function collectCaveman() {
   };
 }
 
+// Headroom keeps TWO files (see its filesystem-contract):
+//   proxy_savings.json      → authoritative savings ledger (what `headroom
+//                             perf` reports: lifetime.tokens_saved / USD).
+//   subscription_state.json → quota windows (latest.*) + raw window-token
+//                             telemetry (window_tokens.*). NOT savings — its
+//                             window_tokens reset every quota window, so it
+//                             must never be treated as a cumulative saving.
+// We read both and return the subscription object (so the Claude quota card +
+// telemetry keep working) with the savings ledger attached as `.savings`.
+function headroomSubPath() {
+  return settings.HEADROOM_SUBSCRIPTION_STATE_PATH || path.join(HOME, '.headroom', 'subscription_state.json');
+}
+function headroomSavingsPath() {
+  return settings.HEADROOM_SAVINGS_PATH || path.join(HOME, '.headroom', 'proxy_savings.json');
+}
+
+function headroomHealthUrl() {
+  return settings.HEADROOM_HEALTH_URL !== undefined
+    ? settings.HEADROOM_HEALTH_URL
+    : 'http://127.0.0.1:8787/health';
+}
+
+// Probe the Headroom proxy's /health endpoint to show a live up/down pill on
+// the card. ECONNREFUSED = proxy not running; a non-2xx or unhealthy body =
+// running but degraded. Empty URL disables the probe (returns null).
+async function probeHeadroomHealth() {
+  const url = headroomHealthUrl();
+  if (!url) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 2500);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      return { ok: false, reachable: true, http_status: res.status, error: `HTTP ${res.status}` };
+    }
+    const healthy = body ? (body.status === 'healthy' && body.ready !== false) : true;
+    return {
+      ok: healthy,
+      reachable: true,
+      http_status: res.status,
+      status: body && body.status,
+      version: body && body.version,
+      uptime_seconds: body && body.uptime_seconds,
+      error: healthy ? null : ((body && body.status) || 'unhealthy'),
+    };
+  } catch (e) {
+    const code = (e.cause && e.cause.code) || '';
+    const refused = /ECONNREFUSED|ECONNRESET/i.test(code) || /refused/i.test(e.message || '');
+    const reason = e.name === 'AbortError' ? 'timeout'
+      : refused ? 'not running' : (code || e.message || 'unreachable');
+    return { ok: false, reachable: false, error: reason };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function collectHeadroom() {
-  const filePath = settings.HEADROOM_SAVINGS_PATH || path.join(HOME, '.headroom', 'subscription_state.json');
-  const raw = await readFile(filePath);
-  if (!raw) return { error: 'no data' };
-  try { return JSON.parse(raw); } catch { return { error: 'parse error' }; }
+  const [subRaw, savRaw, health] = await Promise.all([
+    readFile(headroomSubPath()),
+    readFile(headroomSavingsPath()),
+    probeHeadroomHealth(),
+  ]);
+  const parse = (raw) => { if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } };
+  const sub = parse(subRaw);
+  const savings = parse(savRaw);
+  const base = sub || { error: 'no data' };
+  return { ...base, savings, health };
 }
 
 async function collectCursor() {
@@ -469,11 +532,14 @@ async function maxJsonlLastUsed(filePath, tsField) {
 // quota poll (latest.polled_at); falls back to the state file's mtime, which is
 // rewritten on every poll/cache update.
 function headroomLastUsed(headroom) {
-  const candidate = (headroom && !headroom.error)
-    ? (headroom.last_active_at || (headroom.latest && headroom.latest.polled_at))
-    : null;
-  const statePath = settings.HEADROOM_SAVINGS_PATH || path.join(HOME, '.headroom', 'subscription_state.json');
-  return maxIso(candidate, fileMtimeISO(statePath));
+  const sav = headroom && headroom.savings;
+  const candidate = maxIso(
+    (headroom && !headroom.error)
+      ? (headroom.last_active_at || (headroom.latest && headroom.latest.polled_at))
+      : null,
+    sav && sav.display_session && sav.display_session.last_activity_at,
+  );
+  return maxIso(candidate, fileMtimeISO(headroomSubPath()), fileMtimeISO(headroomSavingsPath()));
 }
 
 // Caveman writes its JSONL log only at session end, so it lags during an active

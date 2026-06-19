@@ -2,8 +2,24 @@
 import { PRICING } from './pricing.js';
 import { setCardLayout, hasSavedLayout, applyLayout } from './layout.js';
 import { manualRefresh } from './main.js';
+import { fetchHistory } from './charts.js';
 
 let settingsOverlay, cursorEnabledCb, cursorTokenGroup, pricingTableBody;
+
+// Lightweight, non-blocking toast for action feedback (success / failure).
+let toastTimer = null;
+function showToast(msg, ok = true) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.className = 'toast ' + (ok ? 'ok' : 'err') + ' show';
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast ' + (ok ? 'ok' : 'err'); }, 3200);
+}
 
 async function loadSettingsUI() {
   try {
@@ -22,6 +38,8 @@ async function loadSettingsUI() {
     document.getElementById('set-cursor-token').value = config.CURSOR_ACCESS_TOKEN || '';
     document.getElementById('set-rtk-home').value = config.RTK_DATA_HOME || '';
     document.getElementById('set-headroom-path').value = config.HEADROOM_SAVINGS_PATH || '';
+    document.getElementById('set-headroom-sub-path').value = config.HEADROOM_SUBSCRIPTION_STATE_PATH || '';
+    document.getElementById('set-headroom-health-url').value = config.HEADROOM_HEALTH_URL !== undefined ? config.HEADROOM_HEALTH_URL : 'http://127.0.0.1:8787/health';
 
     pricingTableBody.innerHTML = '';
     const pricing = config.PRICING || [];
@@ -100,6 +118,28 @@ export function initSettings() {
   settingsClose.addEventListener('click', closeModal);
   settingsCancel.addEventListener('click', closeModal);
 
+  const resetStatsBtn = document.getElementById('reset-stats-btn');
+  resetStatsBtn.addEventListener('click', async () => {
+    if (!confirm('Reset all stats? This permanently clears the recorded trend history and cannot be undone.')) return;
+    resetStatsBtn.disabled = true;
+    try {
+      const res = await fetch('/api/history/reset', { method: 'POST' });
+      const result = await res.json();
+      if (result.success) {
+        await fetchHistory();   // redraw trend charts from the now-empty history
+        closeModal();
+        manualRefresh();
+        showToast('Stats reset — trend history cleared', true);
+      } else {
+        showToast('Failed to reset stats: ' + (result.error || 'unknown error'), false);
+      }
+    } catch (err) {
+      showToast('Error resetting stats: ' + err.message, false);
+    } finally {
+      resetStatsBtn.disabled = false;
+    }
+  });
+
   settingsSave.addEventListener('click', async () => {
     const updatedPricing = [];
     const rows = pricingTableBody.querySelectorAll('tr');
@@ -129,6 +169,8 @@ export function initSettings() {
       CURSOR_ACCESS_TOKEN: document.getElementById('set-cursor-token').value,
       RTK_DATA_HOME: document.getElementById('set-rtk-home').value,
       HEADROOM_SAVINGS_PATH: document.getElementById('set-headroom-path').value,
+      HEADROOM_SUBSCRIPTION_STATE_PATH: document.getElementById('set-headroom-sub-path').value,
+      HEADROOM_HEALTH_URL: document.getElementById('set-headroom-health-url').value,
       PRICING: updatedPricing
     };
 
