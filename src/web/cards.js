@@ -53,10 +53,27 @@ export function renderModels(byModel) {
   `;
 }
 
+// Install pill for the RTK CLI, driven by collectors.js's `rtk --version` probe.
+// Installed = green (with version); missing = red.
+function rtkInstallPill(inst) {
+  if (!inst) return '';
+  if (inst.installed) {
+    const col = 'var(--success, #3fb950)';
+    const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
+    const sub = inst.version ? `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">v${inst.version}</span>` : '';
+    return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}RTK installed${sub}</div>`;
+  }
+  const col = 'var(--danger, #f85149)';
+  const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
+  return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}RTK not installed</div>`;
+}
+
 export function renderRTK(d, lastUsed) {
-  if (!d || d.error) return '<div class="err">No RTK data</div>';
+  const pill = rtkInstallPill(d && d.install);
+  if (!d || d.error) return pill + '<div class="err">No RTK data</div>';
   const s = d.summary || {};
   return `
+    ${pill}
     <div class="big" style="color:var(--rtk)">${ht(s.total_saved || 0)}</div>
     <div class="big-label">tokens saved all-time</div>
     <div class="rows">

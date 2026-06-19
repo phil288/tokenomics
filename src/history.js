@@ -102,6 +102,7 @@ function compactSnapshot(stats) {
     wtd: totalWtd,
     usd: +totalUsd.toFixed(4),
     rawUsd: +totalRawUsd.toFixed(4),
+    saved: +(totalRawUsd - totalUsd).toFixed(4),
     q5: (lt.five_hour && lt.five_hour.utilization_pct) || 0,
     q7: (lt.seven_day && lt.seven_day.utilization_pct) || 0,
     models,

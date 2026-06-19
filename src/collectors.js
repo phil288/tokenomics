@@ -205,23 +205,38 @@ function parseTextRTK(text) {
   return { summary, daily, weekly, monthly };
 }
 
+// Detect whether the `rtk` CLI is installed/on PATH. `rtk --version` prints
+// "rtk X.Y.Z"; a null result means the binary isn't found (or errored), so the
+// card shows a "not installed" pill instead of a phantom "installed".
+async function probeRtkInstalled() {
+  const out = await execPromise('rtk --version');
+  if (!out) return { installed: false };
+  const m = String(out).match(/(\d+\.\d+\.\d+\S*)/);
+  return { installed: true, version: m ? m[1] : null };
+}
+
 async function collectRTK() {
   const homes = rtkDataHomes();
   const envs = homes.length ? homes.map(h => ({ XDG_DATA_HOME: h })) : [{}];
 
-  const results = (await Promise.all(
-    envs.map(env => execPromise('rtk gain -g -a', env).then(o => {
-      if (!o) return null;
-      try {
-        return JSON.parse(o);
-      } catch {
-        return parseTextRTK(o);
-      }
-    }))
-  )).filter(Boolean);
+  const [results, install] = await Promise.all([
+    Promise.all(
+      envs.map(env => execPromise('rtk gain -g -a', env).then(o => {
+        if (!o) return null;
+        try {
+          return JSON.parse(o);
+        } catch {
+          return parseTextRTK(o);
+        }
+      }))
+    ).then(r => r.filter(Boolean)),
+    probeRtkInstalled(),
+  ]);
 
-  if (!results.length) return { error: 'no data' };
-  return results.length === 1 ? results[0] : mergeRTK(results);
+  const base = results.length
+    ? (results.length === 1 ? results[0] : mergeRTK(results))
+    : { error: 'no data' };
+  return { ...base, install };
 }
 
 async function collectCaveman() {

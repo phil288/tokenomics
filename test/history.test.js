@@ -27,6 +27,11 @@ const STATS = {
         '<synthetic>': { input: 999_999 },
       },
     },
+    // Authoritative savings ledger (proxy_savings.json) — cumulative, monotonic.
+    savings: {
+      lifetime: { tokens_saved: 900_000, compression_savings_usd: 4.5, requests: 33 },
+      display_session: { savings_percent: 62 },
+    },
     latest: {
       five_hour: { utilization_pct: 42 },
       seven_day: { utilization_pct: 13 },
@@ -41,9 +46,13 @@ test('compactSnapshot stamps a timestamp and copies RTK/Caveman totals', () => {
   assert.deepEqual(row.cav, { saved: 12_345, sessions: 7 });
 });
 
-test('compactSnapshot computes Headroom cache savings and quota carry-over', () => {
+test('compactSnapshot copies the authoritative savings ledger and quota carry-over', () => {
   const row = compactSnapshot(STATS);
-  assert.equal(row.hr.cacheSave, 900_000); // round(cache_reads * 0.9)
+  // From proxy_savings.json — not derived from rolling window_tokens.
+  assert.equal(row.hr.savedTokens, 900_000);
+  assert.equal(row.hr.savedUsd, 4.5);
+  assert.equal(row.hr.requests, 33);
+  assert.equal(row.hr.savingsPct, 62);
   assert.equal(row.hr.q5, 42);
   assert.equal(row.hr.q7, 13);
 });
@@ -72,6 +81,7 @@ test('compactSnapshot tolerates an empty/absent stats payload', () => {
   const row = compactSnapshot({});
   assert.equal(row.rtk.saved, 0);
   assert.equal(row.cav.saved, 0);
-  assert.equal(row.hr.cacheSave, 0);
+  assert.equal(row.hr.savedTokens, 0);
+  assert.equal(row.hr.savedUsd, 0);
   assert.deepEqual(row.hr.models, {});
 });
