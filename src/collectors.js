@@ -3,6 +3,7 @@ const path = require('path');
 const { exec, spawn } = require('child_process');
 const os = require('os');
 const { settings } = require('./settings');
+const { collectVersion } = require('./version');
 
 const HOME = process.env.HOME || os.homedir();
 const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
@@ -831,7 +832,7 @@ async function collectStats() {
   };
   return {
     rtk, caveman, headroom, cursor, antigravity: antigravityCache,
-    visibility, last_used: lastUsed,
+    visibility, last_used: lastUsed, version: collectVersion(),
     timestamp: new Date().toISOString(), refresh_ms: REFRESH_MS,
   };
 }

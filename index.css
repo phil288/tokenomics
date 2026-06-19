@@ -1526,3 +1526,64 @@ header h1 span {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   word-break: break-all;
 }
+
+/* ---- self-update banner (shown when a newer GitHub release tag exists) ---- */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 11px 14px;
+  border: 1px solid var(--rtk);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--rtk) 12%, var(--card));
+  color: var(--text);
+  font-size: 14px;
+  animation: ub-in 0.3s ease;
+}
+@keyframes ub-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.update-banner .ub-icon { color: var(--rtk); font-size: 15px; }
+.update-banner .ub-text { flex: 1; }
+.update-banner .ub-text strong { color: var(--rtk); }
+.update-banner .ub-link {
+  color: var(--rtk);
+  text-decoration: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.update-banner .ub-link:hover { text-decoration: underline; }
+.update-banner .ub-dismiss {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.update-banner .ub-dismiss:hover { color: var(--text); }
+
+/* ---- app version pill (top-left, beside the title) ---- */
+.app-version {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-decoration: none;
+  line-height: 1.6;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.app-version:hover { color: var(--text); border-color: var(--muted); }
+/* highlight when a newer release tag exists */
+.app-version.update {
+  color: var(--rtk);
+  border-color: var(--rtk);
+  background: color-mix(in srgb, var(--rtk) 12%, var(--card));
+}
+.app-version.update::after { content: "●"; margin-left: 5px; font-size: 8px; }

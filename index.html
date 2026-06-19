@@ -14,6 +14,7 @@
   <header>
     <h1>Tokenomics <span>/ live</span></h1>
     <div class="header-right">
+      <a class="app-version" id="app-version" href="https://github.com/phil288/tokenomics/releases" target="_blank" rel="noopener" title="App version — view releases" style="display:none"></a>
       <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Theme">
         <button data-theme-val="light" title="Light">☀</button>
         <button data-theme-val="auto" title="Auto (follow system)">◐</button>
@@ -31,6 +32,9 @@
       <span id="ts">connecting…</span>
     </div>
   </header>
+
+  <!-- Self-update notice: shown when a newer release tag exists on GitHub -->
+  <div class="update-banner" id="update-banner" style="display:none" role="status"></div>
 
   <nav class="dash-tabs" id="dash-tabs" role="tablist" aria-label="Dashboards">
     <button class="dash-tab active" data-view="overview" role="tab">Overview</button>

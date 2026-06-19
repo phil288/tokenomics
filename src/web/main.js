@@ -4,7 +4,7 @@
 import { state } from './state.js';
 import {
   renderHero, renderRTK, renderCav, renderCursor,
-  renderAntigravity, renderClaude, renderHdr,
+  renderAntigravity, renderClaude, renderHdr, renderUpdateBanner,
 } from './cards.js';
 import { drawRTKChart, fetchHistory, initHistoryControls } from './charts.js';
 import { fetchActivity, initActivity, initDashboardTabs } from './activity.js';
@@ -62,6 +62,9 @@ function render(stats) {
     if (wrap) wrap.style.display = 'none';
   }
 
+  renderVersion(stats.version);
+  renderUpdate(stats.version);
+
   const d = new Date(stats.timestamp);
   document.getElementById('ts').textContent = 'updated ' + d.toLocaleTimeString();
   document.getElementById('dot').className = 'dot live';
@@ -76,6 +79,42 @@ function render(stats) {
 
   // re-position cards after visibility/content changes when a free layout is active
   reapplyCardLayout();
+}
+
+// ---- app version pill (top-left, next to the title) ----
+// Shows the running version; gets an "update" marker when a newer tag exists.
+function renderVersion(version) {
+  const el = document.getElementById('app-version');
+  if (!el) return;
+  const cur = version && version.current;
+  if (!cur) { el.style.display = 'none'; return; }
+  const label = /^v/i.test(cur) ? cur : 'v' + cur;
+  el.textContent = label;
+  const stale = !!(version && version.update_available);
+  el.classList.toggle('update', stale);
+  el.title = stale
+    ? `Update available: ${version.latest} (running ${label}) — view releases`
+    : `App version ${label} — view releases`;
+  el.style.display = 'inline-flex';
+}
+
+// ---- self-update banner ----
+// Dismissal is keyed by the latest version so a newer release re-shows even
+// after the user dismissed an older notice (sessionStorage = clears per tab).
+function renderUpdate(version) {
+  const el = document.getElementById('update-banner');
+  if (!el) return;
+  const html = renderUpdateBanner(version);
+  const dismissed = version && version.latest
+    && sessionStorage.getItem('update-dismissed') === version.latest;
+  if (!html || dismissed) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.innerHTML = html;
+  el.style.display = 'flex';
+  const btn = document.getElementById('update-dismiss');
+  if (btn) btn.addEventListener('click', () => {
+    sessionStorage.setItem('update-dismissed', version.latest);
+    el.style.display = 'none';
+  });
 }
 
 // ---- auto-refresh countdown ----

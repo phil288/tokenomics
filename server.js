@@ -4,11 +4,15 @@ const path = require('path');
 const { getSettings, updateSettings } = require('./src/settings');
 const { collectStats, pollAntigravity, collectActivity } = require('./src/collectors');
 const { history, recordSnapshot, clearHistory } = require('./src/history');
+const { pollVersion } = require('./src/version');
 
 const PORT = Number(process.env.PORT) || 3000;
 const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
 const HISTORY_INTERVAL_MS = Number(process.env.HISTORY_INTERVAL_MS) || 60000;
 const ANTIGRAVITY_POLL_MS = Number(process.env.ANTIGRAVITY_POLL_MS) || 300000;
+// Tags change rarely + unauthenticated GitHub API is rate-limited, so the
+// update check runs on a slow timer (default 6h) out of the fast SSE loop.
+const VERSION_POLL_MS = Number(process.env.VERSION_POLL_MS) || 21600000;
 
 const clients = new Set();
 
@@ -36,10 +40,12 @@ setInterval(recordHistory, HISTORY_INTERVAL_MS);
 // Antigravity is polled on a slow timer of its own: each poll spawns the heavy
 // agy binary over a PTY (~15-20s), so it must stay out of the fast SSE loop.
 setInterval(() => pollAntigravity().catch(err => console.error('Antigravity poll failed:', err)), ANTIGRAVITY_POLL_MS);
+setInterval(() => pollVersion().catch(err => console.error('Version poll failed:', err)), VERSION_POLL_MS);
 
 // Run initial history recording task on startup
 recordHistory().catch(err => console.error('Initial history record failed:', err));
 pollAntigravity().catch(err => console.error('Initial Antigravity poll failed:', err));
+pollVersion().catch(err => console.error('Initial version poll failed:', err));
 
 const server = http.createServer(async (req, res) => {
   if (req.url === '/') {
