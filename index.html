@@ -123,6 +123,16 @@
         <h2>Configuration Settings</h2>
         <button class="modal-close" id="settings-close">&times;</button>
       </div>
+
+      <div class="modal-tabs" id="settings-tabs" role="tablist">
+        <button class="modal-tab active" data-tab="sources" role="tab">Sources</button>
+        <button class="modal-tab" data-tab="connections" role="tab">Connections</button>
+        <button class="modal-tab" data-tab="pricing" role="tab">Pricing</button>
+        <button class="modal-tab" data-tab="data" role="tab">Data</button>
+      </div>
+
+      <!-- Tab: Sources -->
+      <div class="tab-panel active" data-panel="sources">
       <div style="margin-bottom: 16px;">
         <label style="font-weight: 600; font-size: 14px;">Visible Sources</label>
         <div class="vis-grid">
@@ -138,6 +148,10 @@
           Disabling Cursor or Antigravity also stops their data collection.
         </div>
       </div>
+      </div><!-- /Tab: Sources -->
+
+      <!-- Tab: Connections -->
+      <div class="tab-panel" data-panel="connections">
       <div class="form-group" id="set-cursor-token-group">
         <label for="set-cursor-token">Cursor Access Token</label>
         <div style="position: relative; display: flex; align-items: center;">
@@ -156,22 +170,25 @@
       </div>
       <div class="form-group">
         <label for="set-rtk-home">RTK Data Home (Directory Path)</label>
-        <input type="text" id="set-rtk-home" placeholder="e.g. /home/user/.local/share">
+        <input type="text" id="set-rtk-home" placeholder="Default: auto-scan ~/.local/share &amp; snap dirs">
       </div>
       <div class="form-group">
         <label for="set-headroom-path">Headroom Savings JSON Path</label>
-        <input type="text" id="set-headroom-path" placeholder="e.g. /home/user/.headroom/proxy_savings.json">
+        <input type="text" id="set-headroom-path" placeholder="Default: ~/.headroom/proxy_savings.json">
       </div>
       <div class="form-group">
         <label for="set-headroom-sub-path">Headroom Subscription State Path</label>
-        <input type="text" id="set-headroom-sub-path" placeholder="e.g. /home/user/.headroom/subscription_state.json">
+        <input type="text" id="set-headroom-sub-path" placeholder="Default: ~/.headroom/subscription_state.json">
       </div>
       <div class="form-group">
         <label for="set-headroom-health-url">Headroom Health URL</label>
         <input type="text" id="set-headroom-health-url" placeholder="http://127.0.0.1:8787/health (empty to disable probe)">
       </div>
+      </div><!-- /Tab: Connections -->
 
-      <div style="margin-top: 24px;">
+      <!-- Tab: Pricing -->
+      <div class="tab-panel" data-panel="pricing">
+      <div>
         <label style="font-weight: 600; font-size: 14px;">Dynamic Model Pricing (USD per million tokens)</label>
         <div class="pricing-table-container">
           <table class="pricing-table">
@@ -195,7 +212,10 @@
           </div>
         </div>
       </div>
+      </div><!-- /Tab: Pricing -->
 
+      <!-- Tab: Data -->
+      <div class="tab-panel" data-panel="data">
       <div class="danger-zone">
         <div class="danger-zone-text">
           <label>Reset all stats</label>
@@ -203,6 +223,7 @@
         </div>
         <button class="btn-danger" id="reset-stats-btn">Reset</button>
       </div>
+      </div><!-- /Tab: Data -->
 
       <div class="modal-footer">
         <button class="btn-cancel" id="settings-cancel">Cancel</button>

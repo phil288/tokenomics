@@ -104,8 +104,18 @@ export function initSettings() {
     addPricingRow();
   });
 
+  // Tab navigation
+  const tabButtons = document.querySelectorAll('#settings-tabs .modal-tab');
+  const tabPanels = document.querySelectorAll('#settings-overlay .tab-panel');
+  const activateTab = (name) => {
+    tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+    tabPanels.forEach((p) => p.classList.toggle('active', p.dataset.panel === name));
+  };
+  tabButtons.forEach((b) => b.addEventListener('click', () => activateTab(b.dataset.tab)));
+
   settingsBtn.addEventListener('click', () => {
     loadSettingsUI().then(() => {
+      activateTab('sources');   // always open on the first tab
       settingsOverlay.classList.add('open');
       document.body.style.overflow = 'hidden';
     });

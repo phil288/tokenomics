@@ -205,6 +205,16 @@ Both `server.js` and `src/web/pricing.js` define pricing matrices for Claude, Ge
 - Avoid modifying the layout in a way that breaks responsiveness on smaller viewports.
 - Keep the custom styled scrollbars, tooltip formats, and transitions intact.
 
+### ✅ Every New Feature Ships With Tests (NON-NEGOTIABLE)
+**No feature is "done" until it has tests and the full suite passes.** This is a hard requirement.
+- Add or extend a `test/*.test.js` file for every new feature, behavior change, or bug fix.
+- Tests use the **Node.js built-in test runner** (`node:test` + `node:assert/strict`) — **no test-framework dependency** (respect the zero-dependency rule above).
+- Run the full suite with `rtk node --test` (alias: `rtk npm test`) before considering the work complete. It must be green.
+- Match the existing patterns:
+  - **Backend logic** (`server.js`, `src/*.js`): boot the real code against a temp data dir / free port and drive it — see `test/server.test.js`, `test/settings.test.js`, `test/collectors.test.js`.
+  - **Front-end DOM** (`index.html`, `src/web/*.js`): there is **no DOM library** (zero-dep), so assert the HTML/JS *contract* by reading the files and checking structural invariants — see `test/settings-tabs.test.js` (tab↔panel pairing, default active state, field placement, wiring in the JS).
+- Isolate side effects: point `TOKENOMICS_DATA_DIR` at a `mkdtempSync` temp dir so real `data/` files are never touched.
+
 ## 4. How Data Collection Works
 
 Understanding how each source is resolved is crucial for debugging:
