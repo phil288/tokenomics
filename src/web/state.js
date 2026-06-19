@@ -7,4 +7,5 @@ export const state = {
   cardLayout: {},         // free-drag layout: { "<card-id>": {x, y, w, h} }
   activity: [],           // per-op before→after rows from /api/activity
   activityFilter: 'all',  // activity card source filter: all | rtk | headroom
+  activityOpen: {},       // expanded activity rows (key→true), persisted across repaints
 };

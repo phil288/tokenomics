@@ -630,7 +630,21 @@ function parseProxyPerfLine(line) {
   const tsM = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})[.,](\d+)/.exec(line);
   let ts = null;
   if (tsM) { const t = Date.parse(`${tsM[1]}T${tsM[2]}.${tsM[3]}`); if (!Number.isNaN(t)) ts = t; }
-  return { model, before, after, saved: saved === null ? Math.max(0, before - after) : saved, ts };
+  return {
+    model,
+    before, after,
+    saved: saved === null ? Math.max(0, before - after) : saved,
+    ts,
+    // per-request metadata — the closest we can get to "what was this request",
+    // since the body itself is proxied passthrough and never stored.
+    requestId: (/\[(hr_\S+?)\]/.exec(line) || [])[1] || null,
+    msgs: matchNum(line, /\bmsgs=(\d+)/),
+    cacheRead: matchNum(line, /\bcache_read=(\d+)/),
+    cacheWrite: matchNum(line, /\bcache_write=(\d+)/),
+    cacheHitPct: matchNum(line, /cache_hit_pct=(\d+)/),
+    transforms: (/transforms=(\S+)/.exec(line) || [])[1] || null,
+    client: (/client=(\S+)/.exec(line) || [])[1] || null,
+  };
 }
 
 // One Headroom session_stats.jsonl line → compress event or null (skips
@@ -663,7 +677,7 @@ function readRtkActivity(limit) {
       if (!fs.existsSync(dbPath)) continue;
       const db = new DatabaseSync(dbPath, { readOnly: true });
       const r = db.prepare(
-        'SELECT timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct '
+        'SELECT timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct, exec_time_ms '
         + 'FROM commands ORDER BY id DESC LIMIT ?'
       ).all(limit);
       db.close();
@@ -684,6 +698,13 @@ function truncLabel(s, n = 80) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
+function fmtBytes(n) {
+  if (!Number.isFinite(n)) return null;
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+
 // Merge the three sources into one normalized, newest-first activity feed. Each
 // row: { source, ts, label, detail, before, after, saved, pct }.
 async function collectActivity({ limit = 50 } = {}) {
@@ -696,6 +717,10 @@ async function collectActivity({ limit = 50 } = {}) {
     const after = Number(r.output_tokens) || 0;
     const saved = Number(r.saved_tokens);
     const ts = r.timestamp ? Date.parse(r.timestamp) : NaN;
+    const info = [];
+    if (r.rtk_cmd && r.rtk_cmd !== r.original_cmd) info.push(['rewritten', r.rtk_cmd]);
+    if (typeof r.savings_pct === 'number') info.push(['savings', Math.round(r.savings_pct) + '%']);
+    if (Number.isFinite(Number(r.exec_time_ms))) info.push(['exec time', Number(r.exec_time_ms) + ' ms']);
     out.push({
       source: 'rtk',
       ts: Number.isNaN(ts) ? null : ts,
@@ -704,6 +729,7 @@ async function collectActivity({ limit = 50 } = {}) {
       before, after,
       saved: Number.isFinite(saved) ? saved : Math.max(0, before - after),
       pct: typeof r.savings_pct === 'number' ? r.savings_pct : (before ? ((before - after) / before) * 100 : 0),
+      info,
     });
   }
 
@@ -722,24 +748,66 @@ async function collectActivity({ limit = 50 } = {}) {
       detail: null,
       before: e.before, after: e.after, saved: e.saved,
       pct: e.savedPct != null ? e.savedPct : (e.before ? (e.saved / e.before) * 100 : 0),
+      info: [['strategy', e.strategy]],
     });
   }
 
-  // Headroom proxy requests — PERF lines from the tail of proxy.log
+  // Headroom proxy requests — PERF lines from the tail of proxy.log. We also map
+  // request_id → body_bytes from the sibling `outbound_request` lines, so each
+  // row can show the request's wire size (the body itself is never stored).
   const logRaw = tailFileSync(headroomProxyLogPath());
+  const logLines = logRaw ? logRaw.split('\n') : [];
+  const bodyBytesById = {};
+  for (const line of logLines) {
+    if (line.indexOf('event=outbound_request') === -1) continue;
+    const id = (/request_id=(hr_\S+)/.exec(line) || [])[1];
+    const bb = matchNum(line, /body_bytes=(\d+)/);
+    if (id && bb !== null) bodyBytesById[id] = bb;
+  }
   const perfEvents = [];
-  for (const line of logRaw ? logRaw.split('\n') : []) {
+  for (const line of logLines) {
     const e = parseProxyPerfLine(line);
     if (e) perfEvents.push(e);
   }
   for (const e of perfEvents.slice(-limit)) {
+    // Per-instant usage: each request resends the whole (growing) conversation as
+    // context, so tok_before looks cumulative. We want the tokens actually
+    // *processed* this turn (not served from cache). Two imperfect signals exist
+    // in the log, on different bases, so we take whichever is positive:
+    //   - uncached remainder: tok_before - cache_read (the context not cache-read)
+    //   - new cache writes:   cache_write (new tokens cached this turn)
+    // Neither alone suffices: cache_read can exceed tok_before (it also counts
+    // system/tools), zeroing the remainder, while cache_write is 0 on turns whose
+    // new input went uncached. cache_hit_pct is integer-rounded so it reads a
+    // spurious 0 at 100% — never derive fresh from it. The exact uncached-input
+    // count is NOT in the log, so this is a best estimate; it only reads ~0 for a
+    // genuine no-op resend (nothing new read-uncached and nothing newly cached).
+    const ctx = e.before;                               // full context resent this turn
+    const cw = Number.isFinite(e.cacheWrite) ? e.cacheWrite : 0;
+    const cr = Number.isFinite(e.cacheRead) ? e.cacheRead : 0;
+    const fresh = Math.min(ctx, Math.max(ctx - cr, cw)); // new tokens processed this instant
+    const cacheSaved = ctx - fresh;                     // ≈ tokens the cache served this turn
+    const info = [];
+    if (e.msgs != null) info.push(['messages', String(e.msgs)]);
+    info.push(['context resent', String(ctx)]);
+    info.push(['fresh processed', String(fresh)]);
+    if (e.cacheHitPct != null) info.push(['cache hit', e.cacheHitPct + '%']);
+    // genuine per-turn reduction by Headroom's transforms (tok_before → tok_after)
+    if (Number.isFinite(e.after) && e.after < ctx) info.push(['optimized', `${e.after} (−${ctx - e.after})`]);
+    if (e.transforms) info.push(['transform', e.transforms]);
+    if (e.client) info.push(['client', e.client]);
+    if (e.requestId && bodyBytesById[e.requestId] != null) info.push(['request size', fmtBytes(bodyBytesById[e.requestId])]);
+    if (e.requestId) info.push(['request id', e.requestId]);
     out.push({
       source: 'headroom-proxy',
       ts: e.ts,
       label: truncLabel(e.model),
       detail: null,
-      before: e.before, after: e.after, saved: e.saved,
-      pct: e.before ? (e.saved / e.before) * 100 : 0,
+      before: ctx,        // context resent (mostly cached)
+      after: fresh,       // tokens actually processed this instant
+      saved: cacheSaved,  // served from cache this turn
+      pct: ctx ? (cacheSaved / ctx) * 100 : 0,
+      info,
     });
   }
 

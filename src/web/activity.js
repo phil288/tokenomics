@@ -30,6 +30,37 @@ function esc(s) {
   ));
 }
 
+function infoHtml(info) {
+  if (!Array.isArray(info) || !info.length) return '';
+  const items = info.map(([k, v]) =>
+    `<span class="act-info-item"><span class="act-ik">${esc(k)}</span><span class="act-iv">${esc(v)}</span></span>`
+  ).join('');
+  return `<div class="act-info">${items}</div>`;
+}
+
+// The right-hand figure. For RTK/compress it's a genuine reduction ("saved").
+// For Headroom proxy it's the cache-served portion of the resent context — that
+// is NOT a dollar saving (the same cached prefix recurs every turn and bills at
+// the cache-read rate), so we label it "cached" and drop the minus to avoid the
+// phantom-savings impression.
+function savedFig(r, saved, p, color) {
+  if (r.source === 'headroom-proxy') {
+    return `<span class="act-saved" style="color:${color}" title="served from prompt cache this turn — reused context, not a dollar saving (cache reads recur each turn and bill at the cache-read rate)">cached ${ht(saved)} (${Math.round(p)}%)</span>`;
+  }
+  // RTK only filters commands it has a dedicated filter for; everything else is
+  // passed through unchanged (0 saved by design — not a failure). Flag those.
+  if (r.source === 'rtk' && saved <= 0) {
+    return `<span class="act-saved act-passthrough" title="RTK has no dedicated filter for this command (or there was nothing to compress) — passed through unchanged">passthrough · no filter</span>`;
+  }
+  return `<span class="act-saved" style="color:${color}">saved ${ht(saved)} (−${Math.round(p)}%)</span>`;
+}
+
+// Stable per-row identity so expanded state survives a repaint (timestamp +
+// source + label uniquely identify an operation across re-fetches).
+function rowKey(r) {
+  return `${r.source}|${r.ts || 0}|${r.label}`;
+}
+
 function rowHtml(r) {
   const meta = SOURCE_META[r.source] || { name: r.source, color: 'var(--muted)' };
   const before = Number(r.before) || 0;
@@ -38,11 +69,16 @@ function rowHtml(r) {
   const saved = Math.max(0, Number(r.saved) || 0);
   const p = typeof r.pct === 'number' ? r.pct : 0;
   const when = timeAgo(r.ts ? new Date(r.ts).toISOString() : null);
+  const hasInfo = Array.isArray(r.info) && r.info.length > 0;
+  const key = rowKey(r);
+  // default expanded; only collapsed if the user explicitly closed this row
+  const open = hasInfo && state.activityOpen[key] !== false;
   return `
-    <div class="act-row">
+    <div class="act-row${hasInfo ? ' has-info' : ''}${open ? ' open' : ''}" data-key="${esc(key)}">
       <div class="act-row-top">
         <span class="act-src" style="color:${meta.color};border-color:${meta.color}55;background:${meta.color}1a">${esc(meta.name)}</span>
         <span class="act-label" title="${esc(r.detail || r.label)}">${esc(r.label)}</span>
+        ${hasInfo ? '<span class="act-caret">▸</span>' : ''}
         <span class="act-when">${when}</span>
       </div>
       <div class="act-bars">
@@ -51,8 +87,9 @@ function rowHtml(r) {
       </div>
       <div class="act-figs">
         <span class="act-ba">${ht(before)} → <b>${ht(after)}</b></span>
-        <span class="act-saved" style="color:${meta.color}">saved ${ht(saved)} (−${Math.round(p)}%)</span>
+        ${savedFig(r, saved, p, meta.color)}
       </div>
+      ${infoHtml(r.info)}
     </div>`;
 }
 
@@ -95,9 +132,16 @@ export function initActivity() {
   if (!card) return;
   card.addEventListener('click', e => {
     const btn = e.target.closest('.act-filter');
-    if (!btn) return;
-    state.activityFilter = btn.dataset.filter;
-    paintActivity();
+    if (btn) { state.activityFilter = btn.dataset.filter; paintActivity(); return; }
+    // toggle a row's detail, persisting the choice so a background repaint (60s
+    // refresh / tab switch) keeps it as the user left it. Rows are open by
+    // default; this records an explicit open/closed override per row.
+    const row = e.target.closest('.act-row.has-info');
+    if (row) {
+      const willOpen = !row.classList.contains('open');
+      state.activityOpen[row.dataset.key] = willOpen;
+      row.classList.toggle('open', willOpen);
+    }
   });
 }
 

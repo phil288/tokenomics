@@ -1473,9 +1473,56 @@ header h1 span {
 .act-saved {
   font-weight: 700;
 }
+.act-saved.act-passthrough {
+  color: var(--muted);
+  font-weight: 500;
+  font-style: italic;
+}
 .act-empty {
   color: var(--muted);
   font-size: 13px;
   padding: 16px 4px;
   text-align: center;
+}
+.act-row.has-info {
+  cursor: pointer;
+}
+.act-caret {
+  flex: none;
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.act-row.open .act-caret {
+  transform: rotate(90deg);
+}
+.act-info {
+  display: none;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.act-row.open .act-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+.act-info-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 12px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(127, 127, 127, 0.1);
+  max-width: 100%;
+}
+.act-info-item .act-ik {
+  color: var(--muted);
+  flex: none;
+}
+.act-info-item .act-iv {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
 }

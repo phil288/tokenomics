@@ -41,6 +41,20 @@ test('activity.js exports the renderer, fetch, and init wiring', () => {
   assert.match(ACTIVITY_JS, /\/api\/activity/, 'activity.js must call the /api/activity endpoint');
 });
 
+test('RTK 0-saved rows are labeled passthrough, not a misleading saving', () => {
+  // RTK passes unfilterable commands through unchanged (0 saved by design). The
+  // feed must flag those as passthrough rather than rendering "saved 0".
+  assert.match(ACTIVITY_JS, /source === 'rtk'/, 'must special-case rtk rows');
+  assert.match(ACTIVITY_JS, /passthrough/, 'must label 0-saved rtk rows as passthrough');
+});
+
+test('Headroom proxy rows show cache reuse as "cached", not "saved"', () => {
+  // Cache reuse recurs every turn and bills at the cache-read rate, so it must
+  // not be presented as a dollar saving (phantom-savings guard).
+  assert.match(ACTIVITY_JS, /headroom-proxy/, 'must special-case proxy rows');
+  assert.match(ACTIVITY_JS, /cached \$\{ht\(saved\)\}/, 'proxy figure must read "cached", not "saved"');
+});
+
 test('dashboard tabs persist the active view in the URL hash', () => {
   assert.match(ACTIVITY_JS, /location\.hash/, 'tab clicks must drive/read location.hash');
   assert.match(ACTIVITY_JS, /hashchange/, 'must restore the view on hashchange (refresh / back-forward)');

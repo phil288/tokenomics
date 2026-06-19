@@ -160,15 +160,23 @@ test('parseAgyUsage returns an error object for unparseable input', () => {
 
 // ---- Activity feed: per-operation before→after records ----
 
-test('parseProxyPerfLine extracts before/after/saved/model/ts from a PERF line', () => {
-  const line = '2026-06-19 14:29:19,130 - headroom.proxy - INFO - [hr_x] PERF '
-    + 'model=claude-opus-4-8 msgs=2 tok_before=6490 tok_after=1490 tok_saved=5000 cache_read=24713 cache_hit_pct=98';
+test('parseProxyPerfLine extracts tokens + per-request metadata from a PERF line', () => {
+  const line = '2026-06-19 14:29:19,130 - headroom.proxy - INFO - [hr_1781872157_000134] PERF '
+    + 'model=claude-opus-4-8 msgs=2 tok_before=6490 tok_after=1490 tok_saved=5000 cache_read=24713 '
+    + 'cache_write=517 cache_hit_pct=98 opt_ms=20 transforms=router:noop client=claude-code';
   const r = parseProxyPerfLine(line);
   assert.equal(r.model, 'claude-opus-4-8');
   assert.equal(r.before, 6490);
   assert.equal(r.after, 1490);
   assert.equal(r.saved, 5000);
   assert.equal(typeof r.ts, 'number');
+  assert.equal(r.requestId, 'hr_1781872157_000134');
+  assert.equal(r.msgs, 2);
+  assert.equal(r.cacheRead, 24713);
+  assert.equal(r.cacheWrite, 517);
+  assert.equal(r.cacheHitPct, 98);
+  assert.equal(r.transforms, 'router:noop');
+  assert.equal(r.client, 'claude-code');
 });
 
 test('parseProxyPerfLine falls back to before-after when tok_saved missing', () => {
@@ -203,9 +211,9 @@ test('collectActivity merges RTK + Headroom sources, sorts newest-first, caps', 
     fs.mkdirSync(path.join(dir, 'rtk'));
     const db = new DatabaseSync(path.join(dir, 'rtk', 'history.db'));
     db.exec('CREATE TABLE commands (id INTEGER PRIMARY KEY, timestamp TEXT, original_cmd TEXT, '
-      + 'rtk_cmd TEXT, input_tokens INTEGER, output_tokens INTEGER, saved_tokens INTEGER, savings_pct REAL)');
-    db.prepare('INSERT INTO commands (timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct) '
-      + 'VALUES (?,?,?,?,?,?,?)').run('2026-06-19T14:00:00Z', 'git status', 'rtk git status', 1000, 200, 800, 80);
+      + 'rtk_cmd TEXT, input_tokens INTEGER, output_tokens INTEGER, saved_tokens INTEGER, savings_pct REAL, exec_time_ms INTEGER)');
+    db.prepare('INSERT INTO commands (timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct, exec_time_ms) '
+      + 'VALUES (?,?,?,?,?,?,?,?)').run('2026-06-19T14:00:00Z', 'git status', 'rtk git status', 1000, 200, 800, 80, 12);
     db.close();
 
     // Headroom session_stats.jsonl fixture (one compress + one retrieve)
@@ -215,10 +223,14 @@ test('collectActivity merges RTK + Headroom sources, sorts newest-first, caps', 
       JSON.stringify({ type: 'retrieve', hash: 'abc', timestamp: 1781870001 }),
     ].join('\n') + '\n');
 
-    // Headroom proxy.log fixture (one PERF line)
+    // Headroom proxy.log fixture: an outbound_request (carries body_bytes) + the PERF line
     const log = path.join(dir, 'proxy.log');
-    fs.writeFileSync(log, '2026-06-19 14:29:19,130 - headroom.proxy - INFO - [hr_x] PERF '
-      + 'model=claude-opus-4-8 msgs=2 tok_before=6490 tok_after=1490 tok_saved=5000 cache_read=1 cache_hit_pct=98\n');
+    fs.writeFileSync(log, [
+      '2026-06-19 14:29:18,000 - headroom.proxy - INFO - event=outbound_request forwarder=anthropic_messages method=POST path=/v1/messages body_bytes=73666 body_mutated=false request_id=hr_test_1',
+      '2026-06-19 14:29:19,130 - headroom.proxy - INFO - [hr_test_1] PERF '
+        + 'model=claude-opus-4-8 msgs=2 tok_before=6490 tok_after=1490 tok_saved=5000 cache_read=6000 '
+        + 'cache_write=130 cache_hit_pct=98 transforms=router:noop client=claude-code',
+    ].join('\n') + '\n');
 
     process.env.RTK_DATA_HOME = dir;
     process.env.HEADROOM_SESSION_STATS_PATH = stats;
@@ -237,6 +249,30 @@ test('collectActivity merges RTK + Headroom sources, sorts newest-first, caps', 
     assert.equal(rtk.after, 200);
     assert.equal(rtk.saved, 800);
 
+    // per-operation metadata surfaced for expandable rows
+    const infoMap = arr => Object.fromEntries((arr || []).map(([k, v]) => [k, v]));
+    const rtkInfo = infoMap(rtk.info);
+    assert.equal(rtkInfo['rewritten'], 'rtk git status');
+    assert.equal(rtkInfo['exec time'], '12 ms');
+
+    // per-instant fresh usage: context 6490, cache_read 6000 → uncached remainder
+    // 490 (> cache_write 130), so fresh = max(6490-6000, 130) = 490
+    const proxyRow = by('headroom-proxy')[0];
+    assert.equal(proxyRow.before, 6490);  // full context resent this turn
+    assert.equal(proxyRow.after, 490);    // fresh = max(ctx - cache_read, cache_write)
+    assert.equal(proxyRow.saved, 6000);   // served from cache this instant
+    const proxy = infoMap(proxyRow.info);
+    assert.equal(proxy['messages'], '2');
+    assert.equal(proxy['context resent'], '6490');
+    assert.equal(proxy['fresh processed'], '490');
+    assert.equal(proxy['cache hit'], '98%');
+    assert.equal(proxy['transform'], 'router:noop');
+    assert.equal(proxy['client'], 'claude-code');
+    assert.equal(proxy['request size'], '71.9 KB'); // 73666 bytes correlated from outbound_request
+    assert.equal(proxy['request id'], 'hr_test_1');
+
+    assert.equal(infoMap(by('headroom-compress')[0].info)['strategy'], 'router:dedup');
+
     // newest-first by ts
     for (let i = 1; i < rows.length; i++) {
       assert.ok((rows[i - 1].ts || 0) >= (rows[i].ts || 0), 'rows sorted newest-first');
@@ -249,5 +285,110 @@ test('collectActivity merges RTK + Headroom sources, sorts newest-first, caps', 
     delete process.env.HEADROOM_SESSION_STATS_PATH;
     delete process.env.HEADROOM_PROXY_LOG_PATH;
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- Regression guard: Headroom proxy "fresh tokens at each instant" ----
+// Bug history: fresh-per-turn was first derived from the integer-rounded
+// cache_hit_pct, so a 100%-cache-hit request rendered fresh=0 even though the
+// turn really processed new tokens. Truth source is cache_write (exact). These
+// tests lock that contract so the spurious-0 cannot come back.
+
+// Build a proxy.log-only fixture, run collectActivity, return rows keyed by the
+// `before` (context) value for easy lookup. Isolates RTK/compress to empty.
+async function activityFromPerfLines(lines) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-fresh-'));
+  const log = path.join(dir, 'proxy.log');
+  fs.writeFileSync(log, lines.join('\n') + '\n');
+  process.env.RTK_DATA_HOME = path.join(dir, 'no-rtk');          // nonexistent → no rtk rows
+  process.env.HEADROOM_SESSION_STATS_PATH = path.join(dir, 'none.jsonl');
+  process.env.HEADROOM_PROXY_LOG_PATH = log;
+  try {
+    const rows = await collectActivity({ limit: 50 });
+    const byCtx = {};
+    for (const r of rows) if (r.source === 'headroom-proxy') byCtx[r.before] = r;
+    return { rows: rows.filter(r => r.source === 'headroom-proxy'), byCtx };
+  } finally {
+    delete process.env.RTK_DATA_HOME;
+    delete process.env.HEADROOM_SESSION_STATS_PATH;
+    delete process.env.HEADROOM_PROXY_LOG_PATH;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function perf(reqId, { ctx, after = ctx, saved = 0, cacheRead, cacheWrite, hit }) {
+  return `2026-06-19 14:29:19,130 - headroom.proxy - INFO - [${reqId}] PERF `
+    + `model=claude-opus-4-8 msgs=2 tok_before=${ctx} tok_after=${after} tok_saved=${saved} `
+    + `cache_read=${cacheRead} cache_write=${cacheWrite} cache_hit_pct=${hit} `
+    + `opt_ms=20 transforms=router:noop client=claude-code`;
+}
+
+test('proxy fresh usage = cache_write, NOT zero, at 100% cache hit (regression)', async () => {
+  // The exact shape that produced the bug: tok_before huge, cache_hit_pct=100,
+  // but cache_write is nonzero → fresh must equal cache_write, never 0.
+  const { byCtx } = await activityFromPerfLines([
+    perf('hr_a', { ctx: 141141, cacheRead: 176089, cacheWrite: 168, hit: 100 }),
+  ]);
+  const row = byCtx[141141];
+  assert.ok(row, 'proxy row present');
+  assert.notEqual(row.after, 0, 'fresh must not be 0 when cache_write > 0');
+  assert.equal(row.after, 168, 'fresh equals cache_write');
+  assert.equal(row.saved, 141141 - 168, 'cache-served = context - fresh');
+});
+
+test('proxy fresh ignores rounded cache_hit_pct, tracks cache_write exactly', async () => {
+  // Two requests with IDENTICAL rounded hit% (100) but different cache_write must
+  // yield different fresh — proving fresh is NOT a function of cache_hit_pct.
+  const { byCtx } = await activityFromPerfLines([
+    perf('hr_a', { ctx: 130644, cacheRead: 175310, cacheWrite: 779, hit: 100 }),
+    perf('hr_b', { ctx: 140714, cacheRead: 176089, cacheWrite: 168, hit: 100 }),
+  ]);
+  assert.equal(byCtx[130644].after, 779);
+  assert.equal(byCtx[140714].after, 168);
+});
+
+test('proxy fresh = uncached remainder when cache_write=0 but context not fully cached (regression)', async () => {
+  // Real-data shape that produced live zeros: a turn whose new input went
+  // uncached (cache_write=0) while cache_read covers only part of the context.
+  // fresh must be the uncached remainder (ctx - cache_read), never 0.
+  const { byCtx } = await activityFromPerfLines([
+    perf('hr_cw0', { ctx: 146661, after: 121198, saved: 25463, cacheRead: 33780, cacheWrite: 0, hit: 100 }),
+  ]);
+  const row = byCtx[146661];
+  assert.equal(row.after, 146661 - 33780, 'fresh = context - cache_read');
+  assert.ok(row.after > 0, 'must not be 0 when cache_write=0 and context not fully cached');
+});
+
+test('proxy fresh = full context on an uncached first turn (no cache activity)', async () => {
+  const { byCtx } = await activityFromPerfLines([
+    perf('hr_first', { ctx: 79, cacheRead: 0, cacheWrite: 0, hit: 0 }),
+  ]);
+  assert.equal(byCtx[79].after, 79, 'all tokens fresh when nothing is cached');
+  assert.equal(byCtx[79].saved, 0);
+});
+
+test('proxy fresh is capped at the context size', async () => {
+  // Defensive: a cache_write larger than tok_before must not exceed context.
+  const { byCtx } = await activityFromPerfLines([
+    perf('hr_cap', { ctx: 500, cacheRead: 100, cacheWrite: 9999, hit: 80 }),
+  ]);
+  assert.equal(byCtx[500].after, 500, 'fresh clamped to context');
+  assert.equal(byCtx[500].saved, 0);
+});
+
+test('proxy rows never report 0 fresh while showing a large context (the symptom)', async () => {
+  // End-to-end shape of the reported screenshot: several big-context, high-hit
+  // requests. None may render fresh=0 — that was the visible bug.
+  const { rows } = await activityFromPerfLines([
+    perf('hr_1', { ctx: 127400, cacheRead: 176000, cacheWrite: 437, hit: 100 }),
+    perf('hr_2', { ctx: 127200, cacheRead: 175000, cacheWrite: 285, hit: 100 }),
+    perf('hr_3', { ctx: 126100, cacheRead: 174000, cacheWrite: 196, hit: 100 }),
+    perf('hr_4', { ctx: 125300, cacheRead: 173000, cacheWrite: 779, hit: 100 }),
+  ]);
+  assert.equal(rows.length, 4);
+  for (const r of rows) {
+    assert.ok(r.before > 1000, 'large context');
+    assert.ok(r.after > 0, `fresh must be > 0 (got ${r.after} for ctx ${r.before})`);
+    assert.ok(r.after < r.before, 'fresh is a sliver of the resent context');
   }
 });

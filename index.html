@@ -133,7 +133,7 @@
         <span class="card-title">Activity <span class="card-sub">before → after tokens, per operation</span></span>
         <div class="accent" style="background:var(--rtk)"></div>
       </div>
-      <div class="act-note">No tool stores the raw prompt/response text — each row shows the operation label and how its token count shrank. Sources: RTK commands, Headroom compressions, Headroom proxied requests.</div>
+      <div class="act-note">No tool stores the raw prompt/response text (Headroom proxies it passthrough), so the exact query content can't be shown. Each row is one operation at one instant. For Headroom proxy rows the bold figure is the <b>fresh tokens processed that turn</b> — each request resends the whole conversation as context, but the cached prefix is served for free, so only the non-cached remainder is real per-instant usage. Detail (context resent, fresh processed, cache hit %, request size/id) shows under each row — click a row to collapse or reopen it. Sources: RTK commands, Headroom compressions, Headroom proxied requests.</div>
       <div id="activity"><span class="loading">…</span></div>
     </div>
   </div>

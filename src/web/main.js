@@ -68,6 +68,12 @@ function render(stats) {
   resetCountdown(stats.refresh_ms || 10000);
   startClock(stats.refresh_ms || 10000);
 
+  // refresh the activity feed in lockstep with the countdown, but only while it's
+  // the visible view (it tails Headroom's log + reads SQLite — skip when hidden)
+  if (document.getElementById('view-activity')?.classList.contains('active')) {
+    fetchActivity();
+  }
+
   // re-position cards after visibility/content changes when a free layout is active
   reapplyCardLayout();
 }
@@ -143,8 +149,7 @@ setInterval(fetchHistory, 60000);
 
 initDashboardTabs();
 initActivity();
-fetchActivity();
-setInterval(fetchActivity, 60000);
+fetchActivity(); // initial paint; subsequent refreshes ride the SSE/countdown tick in render()
 
 initLayout();         // grab board refs + wire drag before any applyLayout()
 initSettings();
