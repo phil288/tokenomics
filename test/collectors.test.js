@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   parseAgyUsage, parseTextRTK, parseRtkVal,
-  parseProxyPerfLine, parseSessionStatLine, collectActivity,
+  parseProxyPerfLine, parseSessionStatLine, collectActivity, collectRtkTotals,
 } = require('../src/collectors');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -284,6 +284,78 @@ test('collectActivity merges RTK + Headroom sources, sorts newest-first, caps', 
     delete process.env.RTK_DATA_HOME;
     delete process.env.HEADROOM_SESSION_STATS_PATH;
     delete process.env.HEADROOM_PROXY_LOG_PATH;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('collectActivity flags RTK repeats: same query+response → prev vs now effective tokens', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-rep-'));
+  process.env.RTK_DATA_HOME = dir;
+  // No Headroom fixtures → keep the feed RTK-only for this test.
+  process.env.HEADROOM_SESSION_STATS_PATH = path.join(dir, 'none.jsonl');
+  process.env.HEADROOM_PROXY_LOG_PATH = path.join(dir, 'none.log');
+  try {
+    fs.mkdirSync(path.join(dir, 'rtk'));
+    const db = new DatabaseSync(path.join(dir, 'rtk', 'history.db'));
+    db.exec('CREATE TABLE commands (id INTEGER PRIMARY KEY, timestamp TEXT, original_cmd TEXT, '
+      + 'rtk_cmd TEXT, input_tokens INTEGER, output_tokens INTEGER, saved_tokens INTEGER, savings_pct REAL, exec_time_ms INTEGER)');
+    const ins = db.prepare('INSERT INTO commands (timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct, exec_time_ms) '
+      + 'VALUES (?,?,?,?,?,?,?,?)');
+    // First run of `git status` → 200 effective tokens (the "previous" baseline).
+    ins.run('2026-06-19T14:00:00Z', 'git status', 'rtk git status', 1000, 200, 800, 80, 12);
+    // A different command in between — must not become anyone's "previous".
+    ins.run('2026-06-19T14:01:00Z', 'git log', 'rtk git log', 900, 300, 600, 66, 9);
+    // Second run of the SAME query+response → 150 now (consumed 50 fewer).
+    ins.run('2026-06-19T14:02:00Z', 'git status', 'rtk git status', 1000, 150, 850, 85, 11);
+    db.close();
+
+    const rows = await collectActivity({ limit: 50 });
+    const rtk = rows.filter((r) => r.source === 'rtk');
+    const byCmd = (cmd) => rtk.filter((r) => r.label === cmd).sort((a, b) => b.ts - a.ts);
+
+    const [newest, oldest] = byCmd('git status');
+    // Newest identical run compares against the immediately-preceding identical run.
+    assert.ok(newest.repeat, 'newest repeat carries a repeat block');
+    assert.equal(newest.repeat.prevAfter, 200);
+    assert.equal(newest.after, 150);
+    assert.equal(newest.repeat.delta, -50);
+    assert.ok(typeof newest.repeat.prevTs === 'number' && newest.repeat.prevTs > 0, 'prevTs is a ms timestamp');
+    // First-ever occurrence has no prior identical run.
+    assert.ok(!oldest.repeat, 'first occurrence has no repeat');
+    // A one-off command never gets a repeat block.
+    assert.ok(!byCmd('git log')[0].repeat, 'unique command has no repeat');
+  } finally {
+    delete process.env.RTK_DATA_HOME;
+    delete process.env.HEADROOM_SESSION_STATS_PATH;
+    delete process.env.HEADROOM_PROXY_LOG_PATH;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('collectRtkTotals sums gain + loss over the FULL RTK history', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-tot-'));
+  process.env.RTK_DATA_HOME = dir;
+  try {
+    fs.mkdirSync(path.join(dir, 'rtk'));
+    const db = new DatabaseSync(path.join(dir, 'rtk', 'history.db'));
+    db.exec('CREATE TABLE commands (id INTEGER PRIMARY KEY, timestamp TEXT, original_cmd TEXT, '
+      + 'rtk_cmd TEXT, input_tokens INTEGER, output_tokens INTEGER, saved_tokens INTEGER, savings_pct REAL, exec_time_ms INTEGER)');
+    const ins = db.prepare('INSERT INTO commands (timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct, exec_time_ms) '
+      + 'VALUES (?,?,?,?,?,?,?,?)');
+    ins.run('2026-06-01T00:00:00Z', 'a', 'rtk a', 1000, 200, 800, 80, 5);  // gain 800
+    ins.run('2026-06-02T00:00:00Z', 'b', 'rtk b', 1000, 600, 400, 40, 5);  // gain 400
+    ins.run('2026-06-03T00:00:00Z', 'c', 'rtk c', 70, 75, 0, 0, 3);        // loss 5
+    ins.run('2026-06-04T00:00:00Z', 'd', 'rtk d', 50, 50, 0, 0, 2);        // passthrough (0)
+    db.close();
+
+    const t = collectRtkTotals();
+    assert.equal(t.gain, 1200, 'gain = 800 + 400');
+    assert.equal(t.loss, 5, 'loss = 5');
+    assert.equal(t.net, 1195, 'net = gain − loss');
+    assert.equal(t.gainCmds, 2);
+    assert.equal(t.lossCmds, 1);
+  } finally {
+    delete process.env.RTK_DATA_HOME;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

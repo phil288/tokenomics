@@ -13,6 +13,7 @@ const ACTIVITY_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'activity.js')
 const MAIN_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'main.js'), 'utf8');
 const STATE_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'state.js'), 'utf8');
 const CARDS_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'cards.js'), 'utf8');
+const CSS = fs.readFileSync(path.join(ROOT, 'index.css'), 'utf8');
 
 test('dashboard exposes Overview + Activity tabs, each tab has a matching view', () => {
   // tab buttons
@@ -49,6 +50,16 @@ test('RTK 0-saved rows are labeled passthrough, not a misleading saving', () => 
   assert.match(ACTIVITY_JS, /passthrough/, 'must label 0-saved rtk rows as passthrough');
 });
 
+test('RTK rows where output exceeds input are flagged as a loss, not passthrough', () => {
+  // 70 → 75 means RTK's rewrite cost MORE tokens than the original command — a
+  // net loss. RTK records saved=0 for these, so the after>before check must come
+  // before the passthrough branch, and render a distinct loss label.
+  assert.match(ACTIVITY_JS, /r\.after > r\.before/, 'must detect output bigger than input');
+  assert.match(ACTIVITY_JS, /act-loss/, 'must apply the act-loss class');
+  assert.match(ACTIVITY_JS, /loss \+/, 'must render a "loss +N" figure');
+  assert.match(CSS, /\.act-saved\.act-loss\s*\{/, '.act-loss rule missing');
+});
+
 test('Headroom proxy rows show cache reuse as "cached", not "saved"', () => {
   // Cache reuse recurs every turn and bills at the cache-read rate, so it must
   // not be presented as a dollar saving (phantom-savings guard).
@@ -56,9 +67,36 @@ test('Headroom proxy rows show cache reuse as "cached", not "saved"', () => {
   assert.match(ACTIVITY_JS, /cached \$\{ht\(saved\)\}/, 'proxy figure must read "cached", not "saved"');
 });
 
+test('Activity view shows a full-history RTK gain/loss totals bar', () => {
+  // /api/activity returns { rows, rtk }; the rtk field is the whole-history tally.
+  assert.match(ACTIVITY_JS, /data\.rows/, 'fetch must read rows from the { rows, rtk } payload');
+  assert.match(ACTIVITY_JS, /state\.rtkTotals/, 'fetch must store rtk totals on state');
+  assert.match(ACTIVITY_JS, /function rtkTotalsBar\(/, 'must build a totals bar');
+  assert.match(ACTIVITY_JS, /act-totals/, 'totals bar must render an .act-totals element');
+  assert.match(ACTIVITY_JS, /saved \$\{ht\(t\.gain/, 'must render lifetime gain');
+  assert.match(ACTIVITY_JS, /lost \$\{ht\(t\.loss/, 'must render lifetime loss');
+  assert.match(ACTIVITY_JS, /net /, 'must render net gain/loss');
+  assert.match(STATE_JS, /\brtkTotals\b\s*:/, 'state.js must hold rtkTotals');
+  assert.match(CSS, /\.act-totals\s*\{/, 'index.css must style .act-totals');
+  // a note must state where the numbers come from (activity history, not the CLI)
+  assert.match(ACTIVITY_JS, /act-note/, 'totals bar must render a source note');
+  assert.match(ACTIVITY_JS, /history\.db/, 'note must name the activity data source');
+  assert.match(ACTIVITY_JS, /rtk gain/, 'note must contrast with the rtk gain CLI total');
+  assert.match(CSS, /\.act-note\b/, 'index.css must style .act-note');
+});
+
 test('dashboard tabs persist the active view in the URL hash', () => {
   assert.match(ACTIVITY_JS, /location\.hash/, 'tab clicks must drive/read location.hash');
   assert.match(ACTIVITY_JS, /hashchange/, 'must restore the view on hashchange (refresh / back-forward)');
+});
+
+test('activity filter persists in the URL across refresh', () => {
+  // refreshing the page (or sharing a link) must keep the chosen source filter.
+  // It's mirrored in ?filter=<key>: restored on load, written on chip click.
+  assert.match(ACTIVITY_JS, /URLSearchParams\(location\.search\)\.get\('filter'\)/, 'must read the filter from the URL query');
+  assert.match(ACTIVITY_JS, /state\.activityFilter = filterFromUrl\(\)/, 'initActivity must restore the filter from the URL on load');
+  assert.match(ACTIVITY_JS, /setFilterInUrl\(/, 'a chip click must write the filter back to the URL');
+  assert.match(ACTIVITY_JS, /history\.replaceState\(/, 'filter changes must replaceState (no extra history entry)');
 });
 
 test('main.js imports and bootstraps the activity view', () => {

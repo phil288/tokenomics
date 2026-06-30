@@ -85,6 +85,14 @@ test('GET / serves the dashboard HTML with the module entry point', async () => 
   assert.match(body, /<script type="module" src="\/web\/main\.js">/);
 });
 
+test('GET / with a filter query string still serves the dashboard (refresh case)', async () => {
+  // A page refresh while a source filter is active requests /?filter=rtk — that
+  // must resolve to index.html, not 404. Routes match on path, not raw URL.
+  const res = await fetch(base + '/?filter=rtk');
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/html/);
+});
+
 test('GET /index.css serves the stylesheet', async () => {
   const res = await fetch(base + '/index.css');
   assert.equal(res.status, 200);
@@ -154,17 +162,24 @@ test('GET /api/history returns a JSON array', async () => {
   assert.ok(Array.isArray(await res.json()));
 });
 
-test('GET /api/activity returns a capped JSON array of before→after rows', async () => {
+test('GET /api/activity returns { rows, rtk } with capped before→after rows + lifetime totals', async () => {
   const res = await fetch(base + '/api/activity?limit=5');
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /application\/json/);
-  const rows = await res.json();
+  const data = await res.json();
+  assert.ok(!Array.isArray(data) && typeof data === 'object', 'response is an object, not a bare array');
+  const { rows, rtk } = data;
   assert.ok(Array.isArray(rows));
   assert.ok(rows.length <= 5, 'limit honored');
   for (const r of rows) {
     for (const k of ['source', 'ts', 'label', 'before', 'after', 'saved', 'pct']) {
       assert.ok(k in r, `activity row missing key: ${k}`);
     }
+  }
+  // full-history RTK gain/loss tally
+  for (const k of ['gain', 'loss', 'net', 'gainCmds', 'lossCmds']) {
+    assert.ok(k in rtk, `rtk totals missing key: ${k}`);
+    assert.equal(typeof rtk[k], 'number', `rtk.${k} should be numeric`);
   }
 });
 

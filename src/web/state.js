@@ -6,6 +6,7 @@ export const state = {
   explainOpen: false,     // persists the raw-vs-weighted panel across refreshes
   cardLayout: {},         // free-drag layout: { "<card-id>": {x, y, w, h} }
   activity: [],           // per-op before→after rows from /api/activity
+  rtkTotals: null,        // full-history RTK { gain, loss, net, ... } from /api/activity
   activityFilter: 'all',  // activity card source filter: all | rtk | headroom
   activityOpen: {},       // expanded activity rows (key→true), persisted across repaints
 };

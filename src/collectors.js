@@ -677,15 +677,53 @@ function readRtkActivity(limit) {
     try {
       if (!fs.existsSync(dbPath)) continue;
       const db = new DatabaseSync(dbPath, { readOnly: true });
+      // LAG over the WHOLE table (partitioned by query+response identity) gives
+      // each row its immediately-preceding identical run, reaching beyond `limit`.
       const r = db.prepare(
-        'SELECT timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct, exec_time_ms '
-        + 'FROM commands ORDER BY id DESC LIMIT ?'
+        'SELECT timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct, exec_time_ms, '
+        + 'LAG(output_tokens) OVER w AS prev_after, LAG(timestamp) OVER w AS prev_ts '
+        + 'FROM commands '
+        + 'WINDOW w AS (PARTITION BY original_cmd, rtk_cmd ORDER BY id) '
+        + 'ORDER BY id DESC LIMIT ?'
       ).all(limit);
       db.close();
       for (const row of r) rows.push(row);
     } catch { }
   }
   return rows;
+}
+
+// Full-history RTK gain/loss across every active history.db. The CLI only
+// reports savings, never the rows where a rewrite GREW the output, so we sum
+// both directions straight from SQLite: gain = tokens removed when output <
+// input; loss = tokens added when output > input. Equal rows are passthrough.
+function collectRtkTotals() {
+  let DatabaseSync;
+  const empty = { gain: 0, loss: 0, net: 0, gainCmds: 0, lossCmds: 0 };
+  try { ({ DatabaseSync } = require('node:sqlite')); } catch { return empty; }
+  const t = { ...empty };
+  for (const home of rtkDataHomes()) {
+    const dbPath = path.join(home, 'rtk', 'history.db');
+    try {
+      if (!fs.existsSync(dbPath)) continue;
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      const r = db.prepare(
+        'SELECT '
+        + 'COALESCE(SUM(CASE WHEN output_tokens < input_tokens THEN input_tokens - output_tokens ELSE 0 END), 0) AS gain, '
+        + 'COALESCE(SUM(CASE WHEN output_tokens > input_tokens THEN output_tokens - input_tokens ELSE 0 END), 0) AS loss, '
+        + 'COALESCE(SUM(CASE WHEN output_tokens < input_tokens THEN 1 ELSE 0 END), 0) AS gain_cmds, '
+        + 'COALESCE(SUM(CASE WHEN output_tokens > input_tokens THEN 1 ELSE 0 END), 0) AS loss_cmds '
+        + 'FROM commands'
+      ).get();
+      db.close();
+      t.gain += Number(r.gain) || 0;
+      t.loss += Number(r.loss) || 0;
+      t.gainCmds += Number(r.gain_cmds) || 0;
+      t.lossCmds += Number(r.loss_cmds) || 0;
+    } catch { }
+  }
+  t.net = t.gain - t.loss;
+  return t;
 }
 
 function clampLimit(n, def = 50, max = 200) {
@@ -722,6 +760,14 @@ async function collectActivity({ limit = 50 } = {}) {
     if (r.rtk_cmd && r.rtk_cmd !== r.original_cmd) info.push(['rewritten', r.rtk_cmd]);
     if (typeof r.savings_pct === 'number') info.push(['savings', Math.round(r.savings_pct) + '%']);
     if (Number.isFinite(Number(r.exec_time_ms))) info.push(['exec time', Number(r.exec_time_ms) + ' ms']);
+    // Same query (original_cmd) + same response (rtk_cmd) seen before → compare
+    // effective tokens (output) of the prior identical run vs this one.
+    let repeat = null;
+    if (r.prev_after != null) {
+      const prevAfter = Number(r.prev_after) || 0;
+      const prevTs = r.prev_ts ? Date.parse(r.prev_ts) : NaN;
+      repeat = { prevAfter, prevTs: Number.isNaN(prevTs) ? null : prevTs, delta: after - prevAfter };
+    }
     out.push({
       source: 'rtk',
       ts: Number.isNaN(ts) ? null : ts,
@@ -731,6 +777,7 @@ async function collectActivity({ limit = 50 } = {}) {
       saved: Number.isFinite(saved) ? saved : Math.max(0, before - after),
       pct: typeof r.savings_pct === 'number' ? r.savings_pct : (before ? ((before - after) / before) * 100 : 0),
       info,
+      ...(repeat ? { repeat } : {}),
     });
   }
 
@@ -849,6 +896,7 @@ module.exports = {
   collectLastUsed,
   collectStats,
   collectActivity,
+  collectRtkTotals,
   parseProxyPerfLine,
   parseSessionStatLine,
 };

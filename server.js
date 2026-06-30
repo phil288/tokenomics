@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { getSettings, updateSettings } = require('./src/settings');
-const { collectStats, pollAntigravity, collectActivity } = require('./src/collectors');
+const { collectStats, pollAntigravity, collectActivity, collectRtkTotals } = require('./src/collectors');
 const { history, recordSnapshot, clearHistory } = require('./src/history');
 const { pollVersion } = require('./src/version');
 
@@ -48,7 +48,10 @@ pollAntigravity().catch(err => console.error('Initial Antigravity poll failed:',
 pollVersion().catch(err => console.error('Initial version poll failed:', err));
 
 const server = http.createServer(async (req, res) => {
-  if (req.url === '/') {
+  // Match routes on the path only — a refresh carries the client's filter as a
+  // query string (e.g. /?filter=rtk), which must still resolve to index.html.
+  const pathname = req.url.split('?')[0];
+  if (pathname === '/') {
     try {
       const html = fs.readFileSync(path.join(__dirname, 'index.html'));
       res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache' });
@@ -57,7 +60,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500);
       res.end('index.html not found');
     }
-  } else if (req.url === '/index.css') {
+  } else if (pathname === '/index.css') {
     try {
       const css = fs.readFileSync(path.join(__dirname, 'index.css'));
       res.writeHead(200, { 'Content-Type': 'text/css', 'Cache-Control': 'no-cache' });
@@ -96,8 +99,10 @@ const server = http.createServer(async (req, res) => {
     // tails Headroom's large proxy.log; reads RTK's SQLite + Headroom logs.
     const limit = Number(new URL(req.url, 'http://localhost').searchParams.get('limit')) || 50;
     const rows = await collectActivity({ limit });
+    // rtk: full-history gain/loss totals (whole DB, not just the loaded window).
+    const rtk = collectRtkTotals();
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(rows));
+    res.end(JSON.stringify({ rows, rtk }));
   } else if (req.url === '/api/history/reset' && req.method === 'POST') {
     // Reset all stats: wipe the recorded trend history. Live tool totals are
     // owned by the tools themselves and simply repopulate on the next refresh.

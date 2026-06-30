@@ -1391,6 +1391,60 @@ header h1 span {
   gap: 8px;
   margin-bottom: 12px;
 }
+.act-totals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-2, var(--card));
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.act-totals .act-total-lbl {
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+.act-totals .act-total {
+  font-weight: 600;
+}
+.act-totals .act-total.gain {
+  color: var(--headroom);
+}
+.act-totals .act-total.loss {
+  color: var(--danger);
+}
+.act-totals .act-total.net {
+  margin-left: auto;
+  color: var(--text);
+}
+.act-totals .act-total.net.down {
+  color: var(--headroom);
+}
+.act-totals .act-total.net.up {
+  color: var(--danger);
+}
+.act-totals .act-note {
+  flex-basis: 100%;
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--muted);
+}
+.act-totals .act-note code {
+  font-style: normal;
+  font-size: 10px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--border);
+}
 .act-filters {
   display: flex;
   gap: 6px;
@@ -1483,6 +1537,25 @@ header h1 span {
   color: var(--muted);
   font-weight: 500;
   font-style: italic;
+}
+.act-saved.act-loss {
+  color: var(--danger);
+  font-weight: 600;
+}
+.act-repeat {
+  margin-top: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.act-repeat b {
+  color: var(--text);
+}
+.act-repeat.down {
+  color: var(--headroom);
+}
+.act-repeat.up {
+  color: var(--warn);
 }
 .act-empty {
   color: var(--muted);

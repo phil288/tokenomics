@@ -25,6 +25,21 @@ function matchFilter(row, f) {
   return true; // 'all'
 }
 
+// The active source filter is mirrored in the URL (?filter=rtk) so a refresh — or
+// a shared link — keeps the same filter. 'all' is the default, so it's dropped
+// from the URL to keep it clean. Unknown values fall back to 'all'.
+function filterFromUrl() {
+  const v = new URLSearchParams(location.search).get('filter');
+  return FILTERS.some(f => f.key === v) ? v : 'all';
+}
+
+function setFilterInUrl(f) {
+  const url = new URL(location.href);
+  if (f && f !== 'all') url.searchParams.set('filter', f);
+  else url.searchParams.delete('filter');
+  history.replaceState(null, '', url); // no new history entry per filter click
+}
+
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
@@ -48,12 +63,36 @@ function savedFig(r, saved, p, color) {
   if (r.source === 'headroom-proxy') {
     return `<span class="act-saved" style="color:${color}" title="served from prompt cache this turn — reused context, not a dollar saving (cache reads recur each turn and bill at the cache-read rate)">cached ${ht(saved)} (${Math.round(p)}%)</span>`;
   }
-  // RTK only filters commands it has a dedicated filter for; everything else is
-  // passed through unchanged (0 saved by design — not a failure). Flag those.
-  if (r.source === 'rtk' && saved <= 0) {
-    return `<span class="act-saved act-passthrough" title="RTK has no dedicated filter for this command (or there was nothing to compress) — passed through unchanged">passthrough · no filter</span>`;
+  if (r.source === 'rtk') {
+    // Output bigger than input → RTK's rewrite cost MORE tokens than the
+    // original. Net loss, not a passthrough — flag it distinctly (check before
+    // the passthrough branch, since RTK records saved=0 for these).
+    if (r.after > r.before) {
+      const lost = r.after - r.before;
+      const lossPct = r.before ? Math.round((lost / r.before) * 100) : 0;
+      return `<span class="act-saved act-loss" title="RTK's rewrite produced more tokens than the original command — a net loss">loss +${ht(lost)} (+${lossPct}%)</span>`;
+    }
+    // Everything else with no reduction was passed through unchanged (0 saved by
+    // design — not a failure). Flag those.
+    if (saved <= 0) {
+      return `<span class="act-saved act-passthrough" title="RTK has no dedicated filter for this command (or there was nothing to compress) — passed through unchanged">passthrough · no filter</span>`;
+    }
   }
   return `<span class="act-saved" style="color:${color}">saved ${ht(saved)} (−${Math.round(p)}%)</span>`;
+}
+
+// Same query (original_cmd) + same response (rtk_cmd) ran before — compare the
+// prior identical run's effective (post-optimization) tokens against now.
+// delta ≤ 0 means it consumed the same or fewer tokens this time (good → down).
+function repeatHtml(r, after) {
+  if (!r.repeat) return '';
+  const prev = Number(r.repeat.prevAfter) || 0;
+  const delta = Number(r.repeat.delta) || 0;
+  const dir = delta > 0 ? 'up' : 'down';
+  const sign = delta > 0 ? '+' : (delta < 0 ? '−' : '±');
+  const when = r.repeat.prevTs ? timeAgo(new Date(r.repeat.prevTs).toISOString()) : 'earlier';
+  return `<div class="act-repeat ${dir}" title="same command + rewrite seen before (previous run ${esc(when)}) — effective tokens then vs now">`
+    + `↻ seen before · ${ht(prev)} → <b>${ht(after)}</b> (${sign}${ht(Math.abs(delta))})</div>`;
 }
 
 // Stable per-row identity so expanded state survives a repaint (timestamp +
@@ -90,6 +129,7 @@ function rowHtml(r) {
         <span class="act-ba">${ht(before)} → <b>${ht(after)}</b></span>
         ${savedFig(r, saved, p, meta.color)}
       </div>
+      ${repeatHtml(r, after)}
       ${infoHtml(r.info)}
     </div>`;
 }
@@ -106,6 +146,24 @@ function statusStrip() {
   return pills ? `<div class="act-status">${pills}</div>` : '';
 }
 
+// Full-history RTK tally (from /api/activity's `rtk` field, computed over the
+// whole history.db — not just the loaded rows). gain = tokens RTK removed;
+// loss = tokens it added on commands whose rewrite grew the output; net = gain−loss.
+function rtkTotalsBar() {
+  const t = state.rtkTotals;
+  if (!t || (!t.gain && !t.loss)) return '';
+  const net = Number(t.net) || 0;
+  const netDir = net > 0 ? 'down' : (net < 0 ? 'up' : '');
+  const netSign = net > 0 ? '−' : (net < 0 ? '+' : '±');
+  return `<div class="act-totals" title="RTK over full history: ${ht(t.gainCmds || 0)} commands saved tokens, ${ht(t.lossCmds || 0)} cost more than the original">`
+    + `<span class="act-total-lbl">RTK lifetime</span>`
+    + `<span class="act-total gain">saved ${ht(t.gain || 0)}</span>`
+    + `<span class="act-total loss">lost ${ht(t.loss || 0)}</span>`
+    + `<span class="act-total net ${netDir}">net ${netSign}${ht(Math.abs(net))}</span>`
+    + `<span class="act-note">summed per-command from RTK history.db (this activity feed) — not the <code>rtk gain</code> CLI total</span>`
+    + `</div>`;
+}
+
 export function renderActivity(rows, filter) {
   rows = Array.isArray(rows) ? rows : [];
   filter = filter || 'all';
@@ -118,6 +176,7 @@ export function renderActivity(rows, filter) {
     : '<div class="act-empty">No operations recorded yet.</div>';
   return `
     ${statusStrip()}
+    ${rtkTotalsBar()}
     <div class="act-filters">${chips}</div>
     <div class="act-list">${body}</div>`;
 }
@@ -131,7 +190,10 @@ export function paintActivity() {
 export async function fetchActivity() {
   try {
     const res = await fetch('/api/activity?limit=50');
-    state.activity = await res.json();
+    const data = await res.json();
+    // Endpoint returns { rows, rtk }; tolerate a bare array for safety.
+    state.activity = Array.isArray(data) ? data : (data.rows || []);
+    state.rtkTotals = Array.isArray(data) ? null : (data.rtk || null);
   } catch (err) {
     console.error('activity fetch failed', err);
     if (!Array.isArray(state.activity)) state.activity = [];
@@ -144,9 +206,15 @@ export async function fetchActivity() {
 export function initActivity() {
   const card = document.getElementById('activity-card');
   if (!card) return;
+  state.activityFilter = filterFromUrl(); // restore filter from URL on load
   card.addEventListener('click', e => {
     const btn = e.target.closest('.act-filter');
-    if (btn) { state.activityFilter = btn.dataset.filter; paintActivity(); return; }
+    if (btn) {
+      state.activityFilter = btn.dataset.filter;
+      setFilterInUrl(state.activityFilter);
+      paintActivity();
+      return;
+    }
     // toggle a row's detail, persisting the choice so a background repaint (60s
     // refresh / tab switch) keeps it as the user left it. Rows are open by
     // default; this records an explicit open/closed override per row.
