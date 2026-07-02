@@ -4,7 +4,7 @@ const path = require('path');
 const { getSettings, updateSettings } = require('./src/settings');
 const { collectStats, collectStatsRaw, pollAntigravity, collectActivity, collectRtkTotals } = require('./src/collectors');
 const { history, recordSnapshot, clearHistory } = require('./src/history');
-const { captureBaseline, clearBaseline } = require('./src/baseline');
+const { captureBaseline, clearBaseline, applyActivityBaseline } = require('./src/baseline');
 const { pollVersion } = require('./src/version');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -102,15 +102,18 @@ const server = http.createServer(async (req, res) => {
     const rows = await collectActivity({ limit });
     // rtk: full-history gain/loss totals (whole DB, not just the loaded window).
     const rtk = collectRtkTotals();
+    // Honour an active reset baseline: only show events after the reset, and
+    // offset the lifetime gain/loss totals by their value at reset.
+    const payload = applyActivityBaseline({ rows, rtk });
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ rows, rtk }));
+    res.end(JSON.stringify(payload));
   } else if (req.url === '/api/history/reset' && req.method === 'POST') {
     // Reset all stats: wipe the recorded trend history AND capture the current
     // absolute tool totals as a baseline. From now on every reading is shown
     // minus this baseline, so the headline numbers start at zero — without ever
     // touching the tools' own ledgers (fully reversible via DELETE /api/baseline).
     const raw = await collectStatsRaw();
-    captureBaseline(raw);
+    captureBaseline(raw, collectRtkTotals());
     clearHistory();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));

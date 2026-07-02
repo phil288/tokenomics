@@ -279,12 +279,17 @@ For testing different scenarios, you can override settings:
   - **Headroom live window telemetry** (`window_tokens` top-level **and** `by_model`). Even though it "resets each window" on its own (see §4.3), users expect the on-screen "Raw vs weighted by model" / cost numbers to zero on reset too. Offsetting shows "usage since reset" within the current window and clamps to zero after a natural rollover — which reads as reset, so it's consistent. (This is **not** the old phantom-sawtooth bug: we are not inventing a saving, just shifting a display zero-point.)
 - **Left alone (not cumulative counters):** percentages/ratios (`avg_savings_pct` is *recomputed* from the offset totals; `display_session.savings_percent` kept as-is), average exec time, and all quota-utilisation bars.
 
+### The Activity tab (`/api/activity`) is offset separately
+The activity feed is a **different endpoint**, not part of `collectStats()`, so `applyBaseline()` doesn't reach it — it needs its own pass, `applyActivityBaseline({ rows, rtk })`, called in the `/api/activity` handler. It's **event-based**, so "reset" means *only show events after the reset*:
+- **Rows** are filtered to `ts >= baseline.t`. Rows with **no timestamp** can't be proven post-reset, so they're dropped while a baseline is active.
+- The **whole-DB RTK gain/loss totals** (`collectRtkTotals()` → `{ gain, loss, net, gainCmds, lossCmds }`) are offset by their value at reset. Those are captured via `captureBaseline(rawStats, collectRtkTotals())` — passed **in** from `server.js` rather than imported, to avoid a `collectors.js ↔ baseline.js` require cycle — and stored on `baseline.rtkTotals`. `net` is recomputed from the offset `gain - loss`.
+
 ### Gotchas
 - **Server-side offset ≠ what the browser shows.** The DOM only updates from SSE frames. After a reset the stream carries zeros immediately, but a stale tab / cached JS keeps showing old numbers — **hard-refresh** to confirm. Verify the truth with a raw frame: `curl -sN --max-time 4 localhost:3000/api/events`.
 - **Baselines are versioned by their fields.** A baseline captured by an older build lacks `.rtk.day` / `.headroom.window`; `applyBaseline()` guards each sub-object so it still applies safely, but the newer surfaces (reset-day bar, window telemetry) won't zero until the user **resets again** to capture a richer baseline.
 - `data/baseline.json` lives in the gitignored `data/` dir alongside `history.jsonl`.
 
 ### Tests
-- `test/baseline.test.js` — capture/apply/clamp, reset-day bucket subtraction, window-telemetry offset, persistence.
+- `test/baseline.test.js` — capture/apply/clamp, reset-day bucket subtraction, window-telemetry offset, activity-feed offset (`applyActivityBaseline`), persistence.
 - `test/server.test.js` — `POST /api/history/reset` writes the baseline + clears history; `DELETE /api/baseline` removes it.
 - `test/settings-tabs.test.js` — the "Restore absolute totals" control exists in the Data tab and is wired to `DELETE /api/baseline`.

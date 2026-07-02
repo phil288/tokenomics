@@ -114,8 +114,17 @@ function snapshotTotals(stats) {
 }
 
 // Snapshot the current absolute readings and persist them as the new zero-point.
-function captureBaseline(rawStats) {
+// `rtkTotals` is the whole-DB gain/loss rollup (collectRtkTotals()) captured at
+// reset time so the Activity tab's lifetime totals can be offset too. Passed in
+// rather than imported to avoid a require cycle with collectors.js.
+function captureBaseline(rawStats, rtkTotals) {
   baseline = snapshotTotals(rawStats || {});
+  baseline.rtkTotals = {
+    gain: (rtkTotals && rtkTotals.gain) || 0,
+    loss: (rtkTotals && rtkTotals.loss) || 0,
+    gainCmds: (rtkTotals && rtkTotals.gainCmds) || 0,
+    lossCmds: (rtkTotals && rtkTotals.lossCmds) || 0,
+  };
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(BASELINE_FILE, JSON.stringify(baseline));
@@ -218,6 +227,31 @@ function applyBaseline(stats) {
   return stats;
 }
 
+// Offset the Activity feed payload ({ rows, rtk }) IN PLACE. Unlike the live
+// stats, the activity feed is event-based, so "reset" means: only show events
+// that happened AFTER the reset. Rows are filtered by timestamp (rows with no
+// timestamp can't be proven post-reset, so they're dropped while a baseline is
+// active), and the whole-DB RTK gain/loss totals are offset by the values
+// captured at reset. No-op when no baseline is set. Guards on baseline.rtkTotals
+// so a baseline from an older build still filters rows safely.
+function applyActivityBaseline(payload) {
+  if (!baseline || !payload) return payload;
+  const cut = baseline.t;
+  if (Array.isArray(payload.rows)) {
+    payload.rows = payload.rows.filter(r => typeof r.ts === 'number' && r.ts >= cut);
+  }
+  const rb = baseline.rtkTotals;
+  if (payload.rtk && rb) {
+    const r = payload.rtk;
+    r.gain = sub(r.gain, rb.gain);
+    r.loss = sub(r.loss, rb.loss);
+    r.gainCmds = sub(r.gainCmds, rb.gainCmds);
+    r.lossCmds = sub(r.lossCmds, rb.lossCmds);
+    r.net = r.gain - r.loss;
+  }
+  return payload;
+}
+
 // Load any persisted baseline immediately on import (mirrors history.js).
 loadBaseline();
 
@@ -228,4 +262,5 @@ module.exports = {
   captureBaseline,
   clearBaseline,
   applyBaseline,
+  applyActivityBaseline,
 };
