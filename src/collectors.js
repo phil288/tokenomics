@@ -4,6 +4,7 @@ const { exec, spawn } = require('child_process');
 const os = require('os');
 const { settings } = require('./settings');
 const { collectVersion } = require('./version');
+const { applyBaseline } = require('./baseline');
 
 const HOME = process.env.HOME || os.homedir();
 const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
@@ -864,7 +865,9 @@ async function collectActivity({ limit = 50 } = {}) {
   return out.slice(0, limit);
 }
 
-async function collectStats() {
+// Absolute, un-offset stats — every collector at its raw all-time value. Use
+// this when you need the true totals (e.g. capturing a reset baseline).
+async function collectStatsRaw() {
   const [rtk, caveman, headroom, cursor] = await Promise.all([
     collectRTK(), collectCaveman(), collectHeadroom(), collectCursor()
   ]);
@@ -884,6 +887,13 @@ async function collectStats() {
   };
 }
 
+// The view the dashboard consumes: raw totals minus the active reset baseline
+// (a no-op when none is set). Applied here so the SSE stream, recorded history
+// snapshots and the activity feed all share one consistent offset view.
+async function collectStats() {
+  return applyBaseline(await collectStatsRaw());
+}
+
 module.exports = {
   collectRTK,
   collectCaveman,
@@ -895,6 +905,7 @@ module.exports = {
   parseRtkVal,
   collectLastUsed,
   collectStats,
+  collectStatsRaw,
   collectActivity,
   collectRtkTotals,
   parseProxyPerfLine,

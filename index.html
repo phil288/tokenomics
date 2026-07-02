@@ -245,9 +245,16 @@
       <div class="danger-zone">
         <div class="danger-zone-text">
           <label>Reset all stats</label>
-          <span>Clears the recorded trend history (the charts). Live tool totals repopulate on the next refresh; data tracked by RTK, Caveman, Headroom, Cursor &amp; Antigravity themselves is not affected.</span>
+          <span>Zeroes the headline totals from now on: clears the trend history and captures a baseline that's subtracted from every reading (RTK, Caveman &amp; Headroom). Non-destructive &mdash; the tools' own ledgers are never touched, so it's fully reversible.</span>
         </div>
         <button class="btn-danger" id="reset-stats-btn">Reset</button>
+      </div>
+      <div class="danger-zone">
+        <div class="danger-zone-text">
+          <label>Restore absolute totals</label>
+          <span>Removes the reset baseline and shows all-time totals again. (Trend history stays cleared &mdash; only the headline numbers return to their absolute values.)</span>
+        </div>
+        <button class="btn-cancel" id="restore-baseline-btn">Restore</button>
       </div>
       </div><!-- /Tab: Data -->
 

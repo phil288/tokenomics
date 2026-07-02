@@ -2,8 +2,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { getSettings, updateSettings } = require('./src/settings');
-const { collectStats, pollAntigravity, collectActivity, collectRtkTotals } = require('./src/collectors');
+const { collectStats, collectStatsRaw, pollAntigravity, collectActivity, collectRtkTotals } = require('./src/collectors');
 const { history, recordSnapshot, clearHistory } = require('./src/history');
+const { captureBaseline, clearBaseline } = require('./src/baseline');
 const { pollVersion } = require('./src/version');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -104,9 +105,19 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ rows, rtk }));
   } else if (req.url === '/api/history/reset' && req.method === 'POST') {
-    // Reset all stats: wipe the recorded trend history. Live tool totals are
-    // owned by the tools themselves and simply repopulate on the next refresh.
+    // Reset all stats: wipe the recorded trend history AND capture the current
+    // absolute tool totals as a baseline. From now on every reading is shown
+    // minus this baseline, so the headline numbers start at zero — without ever
+    // touching the tools' own ledgers (fully reversible via DELETE /api/baseline).
+    const raw = await collectStatsRaw();
+    captureBaseline(raw);
     clearHistory();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true }));
+  } else if (req.url === '/api/baseline' && req.method === 'DELETE') {
+    // Restore the absolute (all-time) view: drop the reset baseline. Trend
+    // history is not resurrected — only future readings return to raw totals.
+    clearBaseline();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
   } else if (req.url === '/api/settings' && req.method === 'GET') {

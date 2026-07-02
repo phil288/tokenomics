@@ -53,6 +53,13 @@ test('each setting field lives in its expected panel', () => {
   inPanel('pricing', 'pricing-table-body');
   inPanel('pricing', 'btn-add-pricing-row');
   inPanel('data', 'reset-stats-btn');
+  inPanel('data', 'restore-baseline-btn');
+});
+
+test('the restore-baseline control is present and wired to DELETE /api/baseline', () => {
+  assert.ok(HTML.includes('id="restore-baseline-btn"'), 'restore button missing from HTML');
+  assert.match(SETTINGS_JS, /restore-baseline-btn/, 'restore button not queried in settings.js');
+  assert.match(SETTINGS_JS, /fetch\('\/api\/baseline',\s*\{\s*method:\s*'DELETE'\s*\}\)/, 'restore not wired to DELETE /api/baseline');
 });
 
 test('save/cancel footer stays outside every tab panel', () => {

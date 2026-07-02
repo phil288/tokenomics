@@ -150,6 +150,26 @@ export function initSettings() {
     }
   });
 
+  const restoreBaselineBtn = document.getElementById('restore-baseline-btn');
+  restoreBaselineBtn.addEventListener('click', async () => {
+    restoreBaselineBtn.disabled = true;
+    try {
+      const res = await fetch('/api/baseline', { method: 'DELETE' });
+      const result = await res.json();
+      if (result.success) {
+        closeModal();
+        manualRefresh();
+        showToast('Absolute totals restored', true);
+      } else {
+        showToast('Failed to restore totals: ' + (result.error || 'unknown error'), false);
+      }
+    } catch (err) {
+      showToast('Error restoring totals: ' + err.message, false);
+    } finally {
+      restoreBaselineBtn.disabled = false;
+    }
+  });
+
   settingsSave.addEventListener('click', async () => {
     const updatedPricing = [];
     const rows = pricingTableBody.querySelectorAll('tr');

@@ -162,6 +162,25 @@ test('GET /api/history returns a JSON array', async () => {
   assert.ok(Array.isArray(await res.json()));
 });
 
+test('POST /api/history/reset clears history and writes a baseline; DELETE /api/baseline removes it', async () => {
+  const baselineFile = path.join(dataDir, 'baseline.json');
+
+  const reset = await fetch(base + '/api/history/reset', { method: 'POST' });
+  assert.equal(reset.status, 200);
+  assert.equal((await reset.json()).success, true);
+  // reset captures the current absolute totals as a baseline on disk...
+  assert.ok(fs.existsSync(baselineFile), 'reset should write baseline.json');
+  const snap = JSON.parse(fs.readFileSync(baselineFile, 'utf8'));
+  for (const k of ['t', 'rtk', 'caveman', 'headroom']) assert.ok(k in snap, `baseline missing ${k}`);
+  // ...and empties the trend history.
+  assert.deepEqual(await (await fetch(base + '/api/history')).json(), []);
+
+  const restore = await fetch(base + '/api/baseline', { method: 'DELETE' });
+  assert.equal(restore.status, 200);
+  assert.equal((await restore.json()).success, true);
+  assert.ok(!fs.existsSync(baselineFile), 'DELETE should remove baseline.json');
+});
+
 test('GET /api/activity returns { rows, rtk } with capped before→after rows + lifetime totals', async () => {
   const res = await fetch(base + '/api/activity?limit=5');
   assert.equal(res.status, 200);

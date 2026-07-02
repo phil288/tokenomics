@@ -233,6 +233,7 @@ Understanding how each source is resolved is crucial for debugging:
   - **Savings ledger** — `~/.headroom/proxy_savings.json` (`HEADROOM_SAVINGS_PATH`). Authoritative source, matching what `headroom perf` reports: `lifetime.tokens_saved`, `lifetime.compression_savings_usd`, `lifetime.requests`, `display_session.savings_percent`. The Headroom card headline, the hero "Headroom" chip, and the history "saved" trend lines all come from here.
   - **Subscription state** — `~/.headroom/subscription_state.json` (`HEADROOM_SUBSCRIPTION_STATE_PATH`). Holds quota windows (`latest.five_hour` / `seven_day`, used by the Claude card) and raw `window_tokens` telemetry. ⚠️ `window_tokens` is **rolling per quota window and resets each window** — it is *usage telemetry, not savings*. Never treat `window_tokens.cache_reads` as a cumulative saving (old code did `cache_reads × 0.9`, producing a phantom sawtooth that did not match `headroom perf`).
 - `collectHeadroom()` returns the subscription object with the savings ledger attached as `.savings`.
+- Note: a reset **baseline** (see §6) is subtracted from `window_tokens` for *display* ("usage since reset"), but the underlying collector value is still the raw rolling telemetry — never build a saving out of it.
 
 ### 4. Cursor
 - Queries the Connect RPC endpoint `https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` to fetch account quotas and billing cycles.
@@ -261,3 +262,29 @@ For testing different scenarios, you can override settings:
 - `HISTORY_MAX` (default: `5000`)
 - `ANTIGRAVITY_POLL_MS` (default: `300000` — how often the heavy `agy` `/usage` poll runs)
 - `RTK_DATA_HOME` (forces a single RTK directory path)
+
+## 6. Resetting Stats (Baseline Offset)
+
+**The mental trap:** Tokenomics owns almost no numbers. RTK / Caveman / Headroom totals are read fresh from the tools' own ledgers (`rtk gain`, `.caveman-history.jsonl`, `proxy_savings.json`) on every 10 s refresh. So "reset" cannot mean "delete our stored value" — there is nothing of ours to delete, and anything we wipe repopulates on the next tick. The **only** honest, non-destructive reset is a **baseline offset**.
+
+### How it works — `src/baseline.js`
+- On **"Reset all stats"** (`POST /api/history/reset`) the server captures the current **absolute** readings (via `collectStatsRaw()`) into `data/baseline.json` and clears the trend history.
+- `collectStats()` = `applyBaseline(await collectStatsRaw())`. Every reading is shown **minus** the baseline (clamped at ≥ 0), applied **once** server-side so the SSE stream, recorded history snapshots, and the activity feed all share one consistent offset view. The tools' ledgers are never touched → fully reversible via `DELETE /api/baseline` ("Restore absolute totals").
+- The baseline persists to disk and reloads on boot (mirrors `history.js`).
+
+### What is offset vs left alone
+- **Offset (cumulative counters):** RTK `summary.total_saved/commands/input/output`; Caveman `total_saved_tokens/output_tokens/saved_usd/session_count`; Headroom `savings.lifetime.tokens_saved/compression_savings_usd/requests`.
+- **Also offset (subtle, learned the hard way):**
+  - **RTK daily chart buckets.** Trimming pre-reset days is not enough: RTK rolls up a whole day into one bucket, so the **reset-day** bucket already contains pre-reset activity and its bar stays full. The baseline snapshots that day's bucket *at reset time* and subtracts it, so the reset-day bar starts at zero and grows. Weekly/monthly arrays aren't charted → left intact.
+  - **Headroom live window telemetry** (`window_tokens` top-level **and** `by_model`). Even though it "resets each window" on its own (see §4.3), users expect the on-screen "Raw vs weighted by model" / cost numbers to zero on reset too. Offsetting shows "usage since reset" within the current window and clamps to zero after a natural rollover — which reads as reset, so it's consistent. (This is **not** the old phantom-sawtooth bug: we are not inventing a saving, just shifting a display zero-point.)
+- **Left alone (not cumulative counters):** percentages/ratios (`avg_savings_pct` is *recomputed* from the offset totals; `display_session.savings_percent` kept as-is), average exec time, and all quota-utilisation bars.
+
+### Gotchas
+- **Server-side offset ≠ what the browser shows.** The DOM only updates from SSE frames. After a reset the stream carries zeros immediately, but a stale tab / cached JS keeps showing old numbers — **hard-refresh** to confirm. Verify the truth with a raw frame: `curl -sN --max-time 4 localhost:3000/api/events`.
+- **Baselines are versioned by their fields.** A baseline captured by an older build lacks `.rtk.day` / `.headroom.window`; `applyBaseline()` guards each sub-object so it still applies safely, but the newer surfaces (reset-day bar, window telemetry) won't zero until the user **resets again** to capture a richer baseline.
+- `data/baseline.json` lives in the gitignored `data/` dir alongside `history.jsonl`.
+
+### Tests
+- `test/baseline.test.js` — capture/apply/clamp, reset-day bucket subtraction, window-telemetry offset, persistence.
+- `test/server.test.js` — `POST /api/history/reset` writes the baseline + clears history; `DELETE /api/baseline` removes it.
+- `test/settings-tabs.test.js` — the "Restore absolute totals" control exists in the Data tab and is wired to `DELETE /api/baseline`.
