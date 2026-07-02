@@ -326,20 +326,35 @@ function quotaBar(label, pctVal, resetSecs) {
     </div>`;
 }
 
+// "seven_day_sonnet" -> "Sonnet", "seven_day_fable" -> "Fable", etc.
+function modelWindowLabel(slug) {
+  return slug.split(/[-_]/).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+}
+
 // Claude plan usage (session / weekly limits). Sourced from Headroom's poll of
 // the Claude quota API, but it's Claude's data — shown in its own card.
+//
+// Anthropic reports the 7-day "all models" window plus zero or more per-model
+// 7-day windows (e.g. seven_day_sonnet, seven_day_opus, seven_day_fable) —
+// which models get their own window depends on the account's plan/tier, so we
+// discover them from whatever `seven_day_<model>` keys Headroom actually sent
+// rather than hardcoding a single model.
 export function renderClaude(d) {
   if (!d || d.error) return '<div class="err">No Claude quota data</div>';
   const lt = d.latest || {};
   const fh = lt.five_hour || {};
   const sd = lt.seven_day || {};
-  const ss = lt.seven_day_sonnet || {};
-  const have = (fh.utilization_pct != null) || (sd.utilization_pct != null) || (ss.utilization_pct != null);
+  const modelWindows = Object.keys(lt)
+    .filter(k => k.startsWith('seven_day_') && lt[k])
+    .map(k => ({ label: modelWindowLabel(k.slice('seven_day_'.length)), win: lt[k] }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const have = (fh.utilization_pct != null) || (sd.utilization_pct != null)
+    || modelWindows.some(m => m.win.utilization_pct != null);
   if (!have) return '<div class="err">Claude quota unavailable (Headroom hasn\'t polled yet)</div>';
   return `
     ${quotaBar('Current session (5h)', fh.utilization_pct, secsUntil(fh.resets_at))}
     ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, secsUntil(sd.resets_at))}
-    ${quotaBar('Weekly · Sonnet (7d)', ss.utilization_pct, secsUntil(ss.resets_at))}
+    ${modelWindows.map(m => quotaBar(`Weekly · ${m.label} (7d)`, m.win.utilization_pct, secsUntil(m.win.resets_at))).join('')}
   `;
 }
 
