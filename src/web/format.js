@@ -44,10 +44,18 @@ export function usdFull(n) {
   return '$' + n.toFixed(4);
 }
 export function countdown(secs) {
-  if (!secs || secs <= 0) return '';
+  if (secs === null || secs === undefined) return '';
+  if (secs <= 0) return '';
   if (secs > 86400) return `resets in ${Math.floor(secs / 86400)}d ${Math.floor((secs % 86400) / 3600)}h`;
   if (secs > 3600) return `resets in ${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
   return `resets in ${Math.floor(secs / 60)}m`;
+}
+export function remainingTime(secs) {
+  if (secs === null || secs === undefined) return '';
+  if (secs <= 0) return '';
+  if (secs > 86400) return `${Math.floor(secs / 86400)}d ${Math.floor((secs % 86400) / 3600)}h left`;
+  if (secs > 3600) return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m left`;
+  return `${Math.floor(secs / 60)}m left`;
 }
 
 // Headroom stores seconds_to_reset frozen at poll time, so it goes stale

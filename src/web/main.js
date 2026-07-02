@@ -74,7 +74,7 @@ function render(stats) {
   document.getElementById('ts').textContent = 'updated ' + d.toLocaleTimeString();
   document.getElementById('dot').className = 'dot live';
   resetCountdown(stats.refresh_ms || 10000);
-  startClock(stats.refresh_ms || 10000);
+  startClock();
 
   // refresh the activity feed in lockstep with the countdown, but only while it's
   // the visible view (it tails Headroom's log + reads SQLite — skip when hidden)
@@ -139,8 +139,8 @@ function resetCountdown(refreshMs) {
 // ---- live wall-clock tick ----
 // SSE pushes only every REFRESH_MS, and Headroom polls every ~5min, so any
 // clock-derived value (quota reset countdowns, "used Xago") would otherwise sit
-// frozen between updates. Re-render those bits at the refresh cadence from the
-// last snapshot — secsUntil/timeAgo recompute against Date.now(), so they tick.
+// frozen between updates. Re-render those bits once per second from the last
+// snapshot — secsUntil/timeAgo/session estimates recompute against Date.now().
 let clockTimer = null;
 function clockTick() {
   if (!state.lastStats) return;
@@ -148,10 +148,9 @@ function clockTick() {
   const claudeEl = document.getElementById('claude');
   if (claudeEl) claudeEl.innerHTML = renderClaude(state.lastStats.headroom);
 }
-// tick at the same cadence as the auto-refresh countdown (stats.refresh_ms)
-function startClock(refreshMs) {
+function startClock() {
   if (clockTimer) clearInterval(clockTimer);
-  clockTimer = setInterval(clockTick, refreshMs);
+  clockTimer = setInterval(clockTick, 1000);
 }
 
 // manual refresh — pulls a fresh snapshot immediately via /api/stats

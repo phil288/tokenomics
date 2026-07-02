@@ -11,6 +11,8 @@ const assert = require('node:assert/strict');
 
 const ROOT = path.join(__dirname, '..');
 const CARDS_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'cards.js'), 'utf8');
+const FORMAT_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'format.js'), 'utf8');
+const MAIN_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'main.js'), 'utf8');
 
 test('renderClaude discovers per-model 7-day windows generically, not just Sonnet', () => {
   assert.doesNotMatch(CARDS_JS, /lt\.seven_day_sonnet/);
@@ -30,4 +32,41 @@ test('modelWindowLabel is exported/defined and title-cases model slugs', () => {
 
 test('renderClaude renders one bar per discovered model window, labeled from the key', () => {
   assert.match(CARDS_JS, /modelWindows\.map\(m => quotaBar\(`Weekly · \$\{m\.label\} \(7d\)`/);
+});
+
+test('renderClaude shows current-session remaining time inline', () => {
+  assert.match(CARDS_JS, /import \{[^}]*remainingTime[^}]*\} from '\.\/format\.js'/);
+  assert.match(CARDS_JS, /const sessionSecs = sessionResetSecs\(fh\)/);
+  assert.match(CARDS_JS, /quotaBar\('Current session \(5h\)', fh\.utilization_pct, sessionSecs, remainingTime\(sessionSecs\)\)/);
+});
+
+test('quota reset timing accepts timestamp and seconds_to_reset window fields', () => {
+  assert.match(CARDS_JS, /function quotaResetSecs\(win\)/);
+  assert.match(CARDS_JS, /const resetAt = win\.resets_at \|\| win\.reset_at \|\| win\.resetAt/);
+  assert.match(CARDS_JS, /secsUntil\(resetAt\)/);
+  assert.match(CARDS_JS, /Number\.isFinite\(win\.seconds_to_reset\)/);
+  assert.match(CARDS_JS, /quotaBar\('Weekly · all models \(7d\)', sd\.utilization_pct, quotaResetSecs\(sd\)\)/);
+});
+
+test('current session only shows a countdown from valid Headroom timing', () => {
+  const helper = CARDS_JS.slice(
+    CARDS_JS.indexOf('function sessionResetSecs(win)'),
+    CARDS_JS.indexOf('// "seven_day_sonnet"')
+  );
+  assert.match(CARDS_JS, /function sessionResetSecs\(win\)/);
+  assert.match(helper, /const fromTimestamp = secsUntil\(resetAt\)/);
+  assert.match(helper, /if \(fromTimestamp && fromTimestamp > 0\) return fromTimestamp/);
+  assert.match(CARDS_JS, /win\.seconds_to_reset > 0/);
+  assert.match(helper, /return null/);
+  assert.doesNotMatch(helper, /setUTCHours|hourly/);
+  assert.doesNotMatch(helper, /utilization_pct|remainingPct|windowSecs/);
+  assert.doesNotMatch(CARDS_JS, /signedSecsUntil/);
+  assert.doesNotMatch(CARDS_JS, /rolloverSecs/);
+  assert.doesNotMatch(FORMAT_JS, /reset \$\{.*ago/);
+});
+
+test('clock-derived Claude quota text refreshes once per second between SSE frames', () => {
+  assert.match(MAIN_JS, /function clockTick\(\)/);
+  assert.match(MAIN_JS, /renderClaude\(state\.lastStats\.headroom\)/);
+  assert.match(MAIN_JS, /setInterval\(clockTick, 1000\)/);
 });

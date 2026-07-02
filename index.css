@@ -392,6 +392,14 @@ header h1 span {
   color: var(--muted);
 }
 
+.prog-note {
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.82;
+  white-space: nowrap;
+}
+
 .prog-pct {
   font-weight: 700;
   font-variant-numeric: tabular-nums;

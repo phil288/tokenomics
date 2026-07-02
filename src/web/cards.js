@@ -1,5 +1,5 @@
 // ---- per-card HTML renderers ----
-import { ht, pct, usd, usdFull, lastUsedRow, barColor, qpct, countdown, secsUntil, timeAgo } from './format.js';
+import { ht, pct, usd, usdFull, lastUsedRow, barColor, qpct, countdown, remainingTime, secsUntil, timeAgo } from './format.js';
 import {
   MODE_COLORS,
   modelRaw, modelWeighted, modelUsd, modelUsdRaw,
@@ -313,17 +313,36 @@ export function renderAntigravity(d) {
   return html;
 }
 
-function quotaBar(label, pctVal, resetSecs) {
+function quotaBar(label, pctVal, resetSecs, inlineNote = '') {
   const v = pctVal || 0;
   return `
     <div class="prog-group">
       <div class="prog-header">
-        <span class="prog-label">${label}</span>
+        <span class="prog-label">${label}${inlineNote ? ` <span class="prog-note">${inlineNote}</span>` : ''}</span>
         <span class="prog-pct" style="color:${barColor(v)}">${qpct(v)}%</span>
       </div>
       <div class="track"><div class="fill" style="width:${Math.min(v, 100)}%;background:${barColor(v)}"></div></div>
       ${resetSecs != null ? `<div class="prog-sub">${countdown(resetSecs)}</div>` : ''}
     </div>`;
+}
+
+function quotaResetSecs(win) {
+  if (!win) return null;
+  const resetAt = win.resets_at || win.reset_at || win.resetAt;
+  const fromTimestamp = secsUntil(resetAt);
+  if (fromTimestamp != null) return fromTimestamp;
+  return Number.isFinite(win.seconds_to_reset) ? Math.max(0, Math.round(win.seconds_to_reset)) : null;
+}
+
+function sessionResetSecs(win) {
+  if (!win) return null;
+  const resetAt = win.resets_at || win.reset_at || win.resetAt;
+  const fromTimestamp = secsUntil(resetAt);
+  if (fromTimestamp && fromTimestamp > 0) return fromTimestamp;
+  if (Number.isFinite(win.seconds_to_reset) && win.seconds_to_reset > 0) {
+    return Math.round(win.seconds_to_reset);
+  }
+  return null;
 }
 
 // "seven_day_sonnet" -> "Sonnet", "seven_day_fable" -> "Fable", etc.
@@ -351,10 +370,11 @@ export function renderClaude(d) {
   const have = (fh.utilization_pct != null) || (sd.utilization_pct != null)
     || modelWindows.some(m => m.win.utilization_pct != null);
   if (!have) return '<div class="err">Claude quota unavailable (Headroom hasn\'t polled yet)</div>';
+  const sessionSecs = sessionResetSecs(fh);
   return `
-    ${quotaBar('Current session (5h)', fh.utilization_pct, secsUntil(fh.resets_at))}
-    ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, secsUntil(sd.resets_at))}
-    ${modelWindows.map(m => quotaBar(`Weekly · ${m.label} (7d)`, m.win.utilization_pct, secsUntil(m.win.resets_at))).join('')}
+    ${quotaBar('Current session (5h)', fh.utilization_pct, sessionSecs, remainingTime(sessionSecs))}
+    ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, quotaResetSecs(sd))}
+    ${modelWindows.map(m => quotaBar(`Weekly · ${m.label} (7d)`, m.win.utilization_pct, quotaResetSecs(m.win))).join('')}
   `;
 }
 
