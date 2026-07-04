@@ -215,6 +215,13 @@ Both `server.js` and `src/web/pricing.js` define pricing matrices for Claude, Ge
   - **Front-end DOM** (`index.html`, `src/web/*.js`): there is **no DOM library** (zero-dep), so assert the HTML/JS *contract* by reading the files and checking structural invariants — see `test/settings-tabs.test.js` (tab↔panel pairing, default active state, field placement, wiring in the JS).
 - Isolate side effects: point `TOKENOMICS_DATA_DIR` at a `mkdtempSync` temp dir so real `data/` files are never touched.
 
+### 🧠 Keep Agent Knowledge Current (NON-NEGOTIABLE)
+**Every feature, bug fix, architecture change, data-source behavior change, testing pattern, or gotcha discovered while working must update `AGENTS.md` in the same change.** The guide is the project memory for future agents, so stale instructions are treated as an incomplete implementation.
+- Update the relevant section when behavior changes, not just when a new section is obvious.
+- Record durable knowledge: data contracts, environment variables, reset/baseline semantics, collector quirks, UI wiring expectations, test strategy, and operational constraints.
+- Do **not** add noisy changelog entries or temporary debugging notes. Capture what a future agent needs to know to work safely.
+- If no `AGENTS.md` update is needed for a change, explicitly verify that the existing guide already covers the behavior before finishing.
+
 ## 4. How Data Collection Works
 
 Understanding how each source is resolved is crucial for debugging:
@@ -253,6 +260,12 @@ Understanding how each source is resolved is crucial for debugging:
   rtk npm run dev
   ```
 - Frontend modifications (`index.html`, `index.css`, `src/web/*.js`) are served directly from the disk. **Simply edit the files and refresh your browser** to see the changes.
+
+### Change Checklist
+Before finishing any code change:
+- Update or confirm tests for the changed behavior.
+- Update `AGENTS.md` with any new durable agent knowledge, or confirm the existing guide already covers it.
+- Run the full suite with `rtk node --test` and make sure it passes.
 
 ### Environment Variables
 For testing different scenarios, you can override settings:
