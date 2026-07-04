@@ -242,9 +242,11 @@ async function collectRTK() {
 }
 
 async function collectCaveman() {
-  const [modeRaw, historyRaw] = await Promise.all([
+  const statusPath = path.join(HOME, '.claude', '.caveman-statusline-suffix');
+  const [modeRaw, historyRaw, statusRaw] = await Promise.all([
     readFile(path.join(HOME, '.claude', '.caveman-active')),
     readFile(path.join(HOME, '.claude', '.caveman-history.jsonl')),
+    readFile(statusPath),
   ]);
 
   const mode = (modeRaw || 'unknown').trim();
@@ -269,10 +271,25 @@ async function collectCaveman() {
     totalSavedUsd += e.est_saved_usd || 0;
   }
 
+  const statuslineSavedTokens = parseCompactTokenCount(statusRaw);
+  const statuslineUpdatedAt = fileMtimeISO(statusPath);
+
   return {
     mode, session_count: sessions.length, total_output_tokens: totalOutputTokens,
-    total_saved_tokens: totalSavedTokens, total_saved_usd: totalSavedUsd, sessions
+    total_saved_tokens: totalSavedTokens, total_saved_usd: totalSavedUsd, sessions,
+    statusline_saved_tokens: statuslineSavedTokens,
+    statusline_updated_at: statuslineUpdatedAt,
   };
+}
+
+function parseCompactTokenCount(raw) {
+  const text = String(raw || '').trim();
+  const m = text.match(/([\d.]+)\s*([kmb])?/i);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return 0;
+  const mult = m[2] ? ({ k: 1e3, m: 1e6, b: 1e9 }[m[2].toLowerCase()] || 1) : 1;
+  return Math.round(n * mult);
 }
 
 // Headroom keeps TWO files (see its filesystem-contract):

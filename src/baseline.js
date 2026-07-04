@@ -56,9 +56,13 @@ const num = (o, k) => (o && typeof o[k] === 'number') ? o[k] : 0;
 
 // Snapshot the numeric fields of Headroom's window telemetry (top-level totals
 // plus each per-model breakdown) so they can be offset later.
-function snapshotWindow(wt) {
+function snapshotWindow(wt, headroom) {
   const top = {};
   for (const k of WIN_TOP) top[k] = num(wt, k);
+  const latest = (headroom && headroom.latest) || {};
+  top.window_reset_key = (latest.five_hour && latest.five_hour.resets_at)
+    || (latest.seven_day && latest.seven_day.resets_at)
+    || null;
   const by = {};
   for (const [name, m] of Object.entries((wt && wt.by_model) || {})) {
     const e = {};
@@ -79,7 +83,8 @@ function snapshotTotals(stats) {
   const dayRow = daily.find(r => String(r.date) === resetDay) || null;
   const c = stats.caveman || {};
   const life = (stats.headroom && stats.headroom.savings && stats.headroom.savings.lifetime) || {};
-  const wt = (stats.headroom && stats.headroom.window_tokens) || {};
+  const headroom = stats.headroom || {};
+  const wt = headroom.window_tokens || {};
   return {
     t: Date.now(),
     rtk: {
@@ -108,7 +113,7 @@ function snapshotTotals(stats) {
       tokens_saved: life.tokens_saved || 0,
       compression_savings_usd: life.compression_savings_usd || 0,
       requests: life.requests || 0,
-      window: snapshotWindow(wt),
+      window: snapshotWindow(wt, headroom),
     },
   };
 }
@@ -145,6 +150,27 @@ function clearBaseline() {
 }
 
 const sub = (a, b) => Math.max(0, (a || 0) - (b || 0));
+
+function windowBaselineStillApplies(stats, wt, wb) {
+  const latest = (stats.headroom && stats.headroom.latest) || {};
+  const currentResetKey = (latest.five_hour && latest.five_hour.resets_at)
+    || (latest.seven_day && latest.seven_day.resets_at)
+    || null;
+
+  // New baselines remember the quota-window identity. Once Headroom rolls the
+  // live telemetry into a fresh window, the old zero-point no longer describes
+  // the current counters and should not be subtracted.
+  if (wb.window_reset_key && currentResetKey) {
+    return wb.window_reset_key === currentResetKey;
+  }
+
+  // Compatibility for baselines captured before window_reset_key existed: a
+  // smaller rolling counter means Headroom has already reset its own window.
+  if (typeof wt.total_raw === 'number' && typeof wb.total_raw === 'number' && wt.total_raw < wb.total_raw) {
+    return false;
+  }
+  return true;
+}
 
 // Subtract the active baseline from a stats payload IN PLACE and return it.
 // No-op when no baseline is set. collectStats() calls this so every consumer
@@ -191,10 +217,22 @@ function applyBaseline(stats) {
   // ---- Caveman ----
   if (stats.caveman && !stats.caveman.error) {
     const c = stats.caveman;
+    const liveSaved = (typeof c.statusline_saved_tokens === 'number') ? c.statusline_saved_tokens : 0;
+    const liveUpdated = c.statusline_updated_at ? Date.parse(c.statusline_updated_at) : NaN;
+    const liveAfterReset = liveSaved > 0 && Number.isFinite(liveUpdated) && liveUpdated >= b.t;
     c.total_saved_tokens = sub(c.total_saved_tokens, b.caveman.total_saved_tokens);
     c.total_output_tokens = sub(c.total_output_tokens, b.caveman.total_output_tokens);
     c.total_saved_usd = sub(c.total_saved_usd, b.caveman.total_saved_usd);
     c.session_count = sub(c.session_count, b.caveman.session_count);
+
+    // Caveman writes its JSONL totals at session end, but the statusline suffix
+    // is touched while Caveman is active. If a reset baseline zeroes the last
+    // completed-session log, let a post-reset live statusline value keep the
+    // card from looking empty during an active run.
+    if (liveAfterReset && c.total_saved_tokens === 0) {
+      c.total_saved_tokens = liveSaved;
+      if (c.total_saved_usd === 0) c.total_saved_usd = liveSaved * 0.000015;
+    }
   }
 
   // ---- Headroom lifetime savings ledger ----
@@ -208,7 +246,7 @@ function applyBaseline(stats) {
   // ---- Headroom live window telemetry (top-level + per-model) ----
   const wt = stats.headroom && stats.headroom.window_tokens;
   const wb = b.headroom && b.headroom.window;
-  if (wt && wb) {
+  if (wt && wb && windowBaselineStillApplies(stats, wt, wb)) {
     for (const k of WIN_TOP) {
       if (typeof wt[k] === 'number') wt[k] = sub(wt[k], wb[k]);
     }

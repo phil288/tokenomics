@@ -34,8 +34,13 @@ function rawStats(today = new Date().toISOString().slice(0, 10)) {
     caveman: {
       total_saved_tokens: 12_000, total_output_tokens: 5_000,
       total_saved_usd: 3.5, session_count: 9,
+      statusline_saved_tokens: 12_000,
+      statusline_updated_at: '2026-06-30T00:00:00.000Z',
     },
     headroom: {
+      latest: {
+        five_hour: { resets_at: '2026-07-04T13:00:00Z' },
+      },
       window_tokens: {
         input: 111, output: 22, cache_reads: 222, cache_writes_5m: 0, cache_writes_1h: 0,
         cache_writes_total: 0, total_raw: 355, weighted_token_equivalent: 140,
@@ -140,6 +145,55 @@ test('applyBaseline offsets window telemetry to "since reset" but keeps ratios',
   assert.equal(s.headroom.window_tokens.input, 50);
   assert.equal(s.headroom.window_tokens.by_model['claude-sonnet-5'].input, 30);
   assert.equal(s.headroom.savings.display_session.savings_percent, 17); // ratio kept
+  clearBaseline();
+});
+
+test('applyBaseline uses a post-reset Caveman statusline as an active-session fallback', () => {
+  captureBaseline(rawStats());
+  const active = rawStats();
+  active.caveman.statusline_saved_tokens = 12_500;
+  active.caveman.statusline_updated_at = new Date(getBaseline().t + 1000).toISOString();
+  const s = applyBaseline(active);
+  assert.equal(s.caveman.total_saved_tokens, 12_500);
+  assert.equal(s.caveman.total_saved_usd, 0.1875);
+  clearBaseline();
+});
+
+test('applyBaseline ignores an older Caveman statusline fallback', () => {
+  captureBaseline(rawStats());
+  const inactive = rawStats();
+  inactive.caveman.statusline_saved_tokens = 12_500;
+  inactive.caveman.statusline_updated_at = new Date(getBaseline().t - 1000).toISOString();
+  const s = applyBaseline(inactive);
+  assert.equal(s.caveman.total_saved_tokens, 0);
+  assert.equal(s.caveman.total_saved_usd, 0);
+  clearBaseline();
+});
+
+test('applyBaseline stops offsetting Headroom window telemetry after the quota window rolls', () => {
+  captureBaseline(rawStats());
+  const rolled = rawStats();
+  rolled.headroom.latest.five_hour.resets_at = '2026-07-04T18:00:00Z';
+  rolled.headroom.window_tokens.input = 5;
+  rolled.headroom.window_tokens.total_raw = 15;
+  rolled.headroom.window_tokens.by_model['claude-sonnet-5'].input = 4;
+  const s = applyBaseline(rolled);
+  assert.equal(s.headroom.window_tokens.input, 5);
+  assert.equal(s.headroom.window_tokens.total_raw, 15);
+  assert.equal(s.headroom.window_tokens.by_model['claude-sonnet-5'].input, 4);
+  clearBaseline();
+});
+
+test('applyBaseline treats a smaller legacy Headroom window counter as a rollover', () => {
+  captureBaseline(rawStats());
+  const b = getBaseline();
+  delete b.headroom.window.window_reset_key;
+  const rolled = rawStats();
+  rolled.headroom.window_tokens.total_raw = 15;
+  rolled.headroom.window_tokens.input = 5;
+  const s = applyBaseline(rolled);
+  assert.equal(s.headroom.window_tokens.total_raw, 15);
+  assert.equal(s.headroom.window_tokens.input, 5);
   clearBaseline();
 });
 
