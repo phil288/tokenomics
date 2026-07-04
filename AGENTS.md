@@ -163,6 +163,7 @@ The application is structured as a **single-file backend** (`server.js`) and a *
 - **`server.js`**:
   - Starts an HTTP server on the configured `PORT` (default: `3000`).
   - Implements a custom Server-Sent Events (SSE) server (`/api/events`) to stream real-time token statistics to the browser.
+  - All routes match on the **path only** (`req.url` stripped of its query string) — query strings like `/?filter=rtk` or `/web/main.js?v=123` must never 404. `/web/*.js` serving is traversal-guarded by a resolve + prefix check (the route regex alone still admits `..`). `POST /api/settings` caps the request body at 1 MB (413 beyond that).
   - Spawns subprocesses and reads files on a timer (`REFRESH_MS`, default: `10000`) to collect tool data.
   - Records compact snapshots of historical data to `data/history.jsonl` every minute (`HISTORY_INTERVAL_MS`, default: `60000`), capped at `HISTORY_MAX` (default: `5000`) entries.
 - **`index.html`**:
@@ -195,9 +196,9 @@ The project prides itself on having **zero runtime dependencies** (other than No
 - All web operations, routing, SSE streaming, child process orchestration, and file reads must continue to use Node.js standard library APIs (`http`, `fs`, `path`, `child_process`, `os`).
 
 ### 🔄 Keep Cost & Model Lists in Sync
-Both `server.js` and `src/web/pricing.js` define pricing matrices for Claude, Gemini/Antigravity, and Cursor models:
-- In `server.js`: `const PRICING` array defines model prefixes and token costs / cache multiplier values.
-- In `src/web/pricing.js`: the exported `PRICING` array handles the representation on the client side.
+Both `src/settings.js` and `src/web/pricing.js` define pricing matrices for Claude, Gemini/Antigravity, and Cursor models:
+- In `src/settings.js`: the `DEFAULT_PRICING` array defines model prefixes and token costs / cache multiplier values (served to the client via `/api/settings`; users can override it at runtime, which persists to `data/settings.json`).
+- In `src/web/pricing.js`: the exported `PRICING` array is the client-side default (mutated in place when settings load).
 - **If you add a new model or update pricing, you must modify BOTH files to keep them perfectly in sync.**
 
 ### 🎨 Design & Visual Excellence
@@ -238,9 +239,9 @@ Understanding how each source is resolved is crucial for debugging:
 ### 3. Headroom
 - Headroom keeps **two** files (per its filesystem-contract); `collectHeadroom()` reads both:
   - **Savings ledger** — `~/.headroom/proxy_savings.json` (`HEADROOM_SAVINGS_PATH`). Authoritative source, matching what `headroom perf` reports: `lifetime.tokens_saved`, `lifetime.compression_savings_usd`, `lifetime.requests`, `display_session.savings_percent`. The Headroom card headline, the hero "Headroom" chip, and the history "saved" trend lines all come from here.
-  - **Subscription state** — `~/.headroom/subscription_state.json` (`HEADROOM_SUBSCRIPTION_STATE_PATH`). Holds quota windows (`latest.five_hour` / `seven_day`, used by the Claude card) and raw `window_tokens` telemetry. ⚠️ `window_tokens` is **rolling per quota window and resets each window** — it is *usage telemetry, not savings*. Never treat `window_tokens.cache_reads` as a cumulative saving (old code did `cache_reads × 0.9`, producing a phantom sawtooth that did not match `headroom perf`).
-- `collectHeadroom()` returns the subscription object with the savings ledger attached as `.savings`.
-- Note: a reset **baseline** (see §6) is subtracted from `window_tokens` for *display* ("usage since reset"), but the underlying collector value is still the raw rolling telemetry — never build a saving out of it.
+  - **Subscription state** — `~/.headroom/subscription_state.json` (`HEADROOM_SUBSCRIPTION_STATE_PATH`). Holds quota windows (`latest.five_hour` / `seven_day`, used by the Claude card) and raw `window_tokens` telemetry. ⚠️ raw `window_tokens` **resets whenever the Headroom proxy restarts (e.g. every PC reboot) or a quota window rolls** — it is *usage telemetry, not savings*. Never treat `window_tokens.cache_reads` as a cumulative saving (old code did `cache_reads × 0.9`, producing a phantom sawtooth that did not match `headroom perf`).
+- `collectHeadroom()` returns the subscription object with the savings ledger attached as `.savings` — but its `window_tokens` is **not the raw source value**: it is replaced by the persisted local accumulator from `src/headroom-telemetry.js` (state file `data/headroom-telemetry.json`). The accumulator folds in only the newly observed growth of the raw counters (top-level + `by_model`), treats a shrunk counter as a source reset (the whole new value is new usage), and — when the raw source is missing/unreadable — returns the persisted totals **without touching its `last` snapshot** (updating `last` to zeros on a failed read would double-count still-growing raw counters on the next successful read). Result: the card's telemetry survives PC/proxy restarts and window rollovers, and only "resets" via the dashboard's own reset flow (§6 baseline offset — non-destructive; the accumulator file itself is never wiped by a reset).
+- The accumulated `window_tokens` is **monotonic** — it only ever grows. This is why `applyBaseline()` subtracts the window baseline unconditionally (no quota-window-identity gating; the old `window_reset_key` guard was removed when the accumulator landed). It is still *usage, not savings* — never build a saving out of it.
 
 ### 4. Cursor
 - Queries the Connect RPC endpoint `https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` to fetch account quotas and billing cycles.
@@ -281,7 +282,7 @@ For testing different scenarios, you can override settings:
 **The mental trap:** Tokenomics owns almost no numbers. RTK / Caveman / Headroom totals are read fresh from the tools' own ledgers (`rtk gain`, `.caveman-history.jsonl`, `proxy_savings.json`) on every 10 s refresh. So "reset" cannot mean "delete our stored value" — there is nothing of ours to delete, and anything we wipe repopulates on the next tick. The **only** honest, non-destructive reset is a **baseline offset**.
 
 ### How it works — `src/baseline.js`
-- On **"Reset all stats"** (`POST /api/history/reset`) the server captures the current **absolute** readings (via `collectStatsRaw()`) into `data/baseline.json` and clears the trend history.
+- On **"Reset all stats"** (`POST /api/history/reset`) the server captures the current **absolute** readings (via `collectStatsRaw()`) into `data/baseline.json` and clears the trend history. The endpoint requires the UI-only confirmation header `X-Tokenomics-Reset-Confirm: manual`; unconfirmed POSTs are rejected (400) so a stray request cannot silently create a new baseline.
 - `collectStats()` = `applyBaseline(await collectStatsRaw())`. Every reading is shown **minus** the baseline (clamped at ≥ 0), applied **once** server-side so the SSE stream, recorded history snapshots, and the activity feed all share one consistent offset view. The tools' ledgers are never touched → fully reversible via `DELETE /api/baseline` ("Restore absolute totals").
 - The baseline persists to disk and reloads on boot (mirrors `history.js`).
 
@@ -289,7 +290,7 @@ For testing different scenarios, you can override settings:
 - **Offset (cumulative counters):** RTK `summary.total_saved/commands/input/output`; Caveman `total_saved_tokens/output_tokens/saved_usd/session_count`; Headroom `savings.lifetime.tokens_saved/compression_savings_usd/requests`.
 - **Also offset (subtle, learned the hard way):**
   - **RTK daily chart buckets.** Trimming pre-reset days is not enough: RTK rolls up a whole day into one bucket, so the **reset-day** bucket already contains pre-reset activity and its bar stays full. The baseline snapshots that day's bucket *at reset time* and subtracts it, so the reset-day bar starts at zero and grows. Weekly/monthly arrays aren't charted → left intact.
-  - **Headroom live window telemetry** (`window_tokens` top-level **and** `by_model`). Even though it "resets each window" on its own (see §4.3), users expect the on-screen "Raw vs weighted by model" / cost numbers to zero on reset too. Offsetting shows "usage since reset" within the current window and clamps to zero after a natural rollover — which reads as reset, so it's consistent. (This is **not** the old phantom-sawtooth bug: we are not inventing a saving, just shifting a display zero-point.)
+  - **Headroom window telemetry** (`window_tokens` top-level **and** `by_model`). The value reaching `applyBaseline()` is the persisted local accumulator (see §4.3), which is **monotonic** — it never drops on proxy restarts or window rollovers — so the window baseline is subtracted **unconditionally** to show "usage since reset". (No quota-window-identity gating: the old `window_reset_key` guard existed for raw rolling counters and was removed with the accumulator. This is also **not** the old phantom-sawtooth bug: we are not inventing a saving, just shifting a display zero-point.)
 - **Left alone (not cumulative counters):** percentages/ratios (`avg_savings_pct` is *recomputed* from the offset totals; `display_session.savings_percent` kept as-is), average exec time, and all quota-utilisation bars.
 
 ### The Activity tab (`/api/activity`) is offset separately
@@ -300,9 +301,10 @@ The activity feed is a **different endpoint**, not part of `collectStats()`, so 
 ### Gotchas
 - **Server-side offset ≠ what the browser shows.** The DOM only updates from SSE frames. After a reset the stream carries zeros immediately, but a stale tab / cached JS keeps showing old numbers — **hard-refresh** to confirm. Verify the truth with a raw frame: `curl -sN --max-time 4 localhost:3000/api/events`.
 - **Baselines are versioned by their fields.** A baseline captured by an older build lacks `.rtk.day` / `.headroom.window`; `applyBaseline()` guards each sub-object so it still applies safely, but the newer surfaces (reset-day bar, window telemetry) won't zero until the user **resets again** to capture a richer baseline.
-- `data/baseline.json` lives in the gitignored `data/` dir alongside `history.jsonl`.
+- `data/baseline.json` lives in the gitignored `data/` dir alongside `history.jsonl`; the Headroom telemetry accumulator state lives in `data/headroom-telemetry.json`.
 
 ### Tests
-- `test/baseline.test.js` — capture/apply/clamp, reset-day bucket subtraction, window-telemetry offset, activity-feed offset (`applyActivityBaseline`), persistence.
-- `test/server.test.js` — `POST /api/history/reset` writes the baseline + clears history; `DELETE /api/baseline` removes it.
+- `test/baseline.test.js` — capture/apply/clamp, reset-day bucket subtraction, window-telemetry offset (kept applying across Headroom's own window rollover), activity-feed offset (`applyActivityBaseline`), persistence.
+- `test/headroom-telemetry.test.js` — the accumulator: first-observation seeding, same-window growth, restart-reset survival, post-reset new usage, missing-source reads (no `last` mutation → no double-count), and the `collectHeadroom()` wiring end-to-end.
+- `test/server.test.js` — `POST /api/history/reset` writes the baseline + clears history (and is rejected without the confirm header); `DELETE /api/baseline` removes it.
 - `test/settings-tabs.test.js` — the "Restore absolute totals" control exists in the Data tab and is wired to `DELETE /api/baseline`.

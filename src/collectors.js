@@ -5,6 +5,7 @@ const os = require('os');
 const { settings } = require('./settings');
 const { collectVersion } = require('./version');
 const { applyBaseline } = require('./baseline');
+const { accumulateWindowTelemetry } = require('./headroom-telemetry');
 
 const HOME = process.env.HOME || os.homedir();
 const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
@@ -359,7 +360,13 @@ async function collectHeadroom() {
   const sub = parse(subRaw);
   const savings = parse(savRaw);
   const base = sub || { error: 'no data' };
-  return { ...base, savings, health };
+  // Headroom's raw window counters reset when the proxy restarts or a quota
+  // window rolls. Display the persisted local accumulator instead so the
+  // telemetry survives PC/proxy restarts (usage, not savings — see
+  // src/headroom-telemetry.js). Resettable only via the dashboard's own
+  // reset flow (baseline offset).
+  const windowTokens = accumulateWindowTelemetry(sub ? sub.window_tokens : null);
+  return { ...base, window_tokens: windowTokens, savings, health };
 }
 
 async function collectCursor() {

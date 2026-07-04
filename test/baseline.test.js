@@ -170,30 +170,19 @@ test('applyBaseline ignores an older Caveman statusline fallback', () => {
   clearBaseline();
 });
 
-test('applyBaseline stops offsetting Headroom window telemetry after the quota window rolls', () => {
+test('applyBaseline keeps offsetting window telemetry after Headroom rolls its own quota window', () => {
+  // The telemetry reaching applyBaseline() is the local monotonic accumulator
+  // (src/headroom-telemetry.js) — it never drops when Headroom restarts or
+  // rolls a window — so the baseline must keep applying regardless of the
+  // quota-window identity.
   captureBaseline(rawStats());
   const rolled = rawStats();
-  rolled.headroom.latest.five_hour.resets_at = '2026-07-04T18:00:00Z';
-  rolled.headroom.window_tokens.input = 5;
-  rolled.headroom.window_tokens.total_raw = 15;
-  rolled.headroom.window_tokens.by_model['claude-sonnet-5'].input = 4;
+  rolled.headroom.latest.five_hour.resets_at = '2026-07-04T18:00:00Z'; // window rolled
+  rolled.headroom.window_tokens.input = 161;                           // accumulator grew +50
+  rolled.headroom.window_tokens.by_model['claude-sonnet-5'].input = 130; // +30
   const s = applyBaseline(rolled);
-  assert.equal(s.headroom.window_tokens.input, 5);
-  assert.equal(s.headroom.window_tokens.total_raw, 15);
-  assert.equal(s.headroom.window_tokens.by_model['claude-sonnet-5'].input, 4);
-  clearBaseline();
-});
-
-test('applyBaseline treats a smaller legacy Headroom window counter as a rollover', () => {
-  captureBaseline(rawStats());
-  const b = getBaseline();
-  delete b.headroom.window.window_reset_key;
-  const rolled = rawStats();
-  rolled.headroom.window_tokens.total_raw = 15;
-  rolled.headroom.window_tokens.input = 5;
-  const s = applyBaseline(rolled);
-  assert.equal(s.headroom.window_tokens.total_raw, 15);
-  assert.equal(s.headroom.window_tokens.input, 5);
+  assert.equal(s.headroom.window_tokens.input, 50);
+  assert.equal(s.headroom.window_tokens.by_model['claude-sonnet-5'].input, 30);
   clearBaseline();
 });
 

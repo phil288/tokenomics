@@ -1,5 +1,5 @@
 // ---- pricing matrix & per-model cost/weight math ----
-// NOTE: keep this PRICING table in sync with the PRICING array in server.js.
+// NOTE: keep this PRICING table in sync with DEFAULT_PRICING in src/settings.js.
 
 export const MODE_COLORS = {
   full: '#d4a72c', ultra: '#f97316', lite: '#fbbf24',

@@ -21,7 +21,7 @@ async function pushStats() {
   if (clients.size === 0) return;
   const stats = await collectStats();
   const data = `data: ${JSON.stringify(stats)}\n\n`;
-  for (const res of clients) {
+  for (const res of [...clients]) {
     try { res.write(data); } catch { clients.delete(res); }
   }
 }
@@ -70,11 +70,12 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404);
       res.end('index.css not found');
     }
-  } else if (/^\/web\/[\w./-]+\.js$/.test(req.url)) {
-    // Serve the ES-module frontend from src/web/. The regex already bars
-    // traversal chars; resolve + prefix-check keeps it airtight.
+  } else if (/^\/web\/[\w./-]+\.js$/.test(pathname)) {
+    // Serve the ES-module frontend from src/web/. The regex narrows the
+    // charset, but still admits ".." — the prefix-check below is what
+    // actually bars traversal.
     const webDir = path.join(__dirname, 'src', 'web');
-    const file = path.join(webDir, req.url.slice('/web/'.length));
+    const file = path.join(webDir, pathname.slice('/web/'.length));
     if (!file.startsWith(webDir + path.sep)) {
       res.writeHead(403);
       res.end('Forbidden');
@@ -88,14 +89,14 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404);
       res.end('module not found');
     }
-  } else if (req.url === '/api/stats') {
+  } else if (pathname === '/api/stats') {
     const stats = await collectStats();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(stats));
-  } else if (req.url === '/api/history' && req.method === 'GET') {
+  } else if (pathname === '/api/history' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(history));
-  } else if (req.url.startsWith('/api/activity') && req.method === 'GET') {
+  } else if (pathname === '/api/activity' && req.method === 'GET') {
     // Per-operation before→after token feed. Lazy (not in the SSE loop) since it
     // tails Headroom's large proxy.log; reads RTK's SQLite + Headroom logs.
     const limit = Number(new URL(req.url, 'http://localhost').searchParams.get('limit')) || 50;
@@ -107,29 +108,49 @@ const server = http.createServer(async (req, res) => {
     const payload = applyActivityBaseline({ rows, rtk });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(payload));
-  } else if (req.url === '/api/history/reset' && req.method === 'POST') {
+  } else if (pathname === '/api/history/reset' && req.method === 'POST') {
     // Reset all stats: wipe the recorded trend history AND capture the current
     // absolute tool totals as a baseline. From now on every reading is shown
     // minus this baseline, so the headline numbers start at zero — without ever
     // touching the tools' own ledgers (fully reversible via DELETE /api/baseline).
+    // UI-only confirmation header: the dashboard sends it after its confirm()
+    // dialog, so a stray scripted POST cannot silently capture a new baseline.
+    if (req.headers['x-tokenomics-reset-confirm'] !== 'manual') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Reset requires the X-Tokenomics-Reset-Confirm: manual header' }));
+      return;
+    }
     const raw = await collectStatsRaw();
     captureBaseline(raw, collectRtkTotals());
     clearHistory();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
-  } else if (req.url === '/api/baseline' && req.method === 'DELETE') {
+  } else if (pathname === '/api/baseline' && req.method === 'DELETE') {
     // Restore the absolute (all-time) view: drop the reset baseline. Trend
     // history is not resurrected — only future readings return to raw totals.
     clearBaseline();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
-  } else if (req.url === '/api/settings' && req.method === 'GET') {
+  } else if (pathname === '/api/settings' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(getSettings()));
-  } else if (req.url === '/api/settings' && req.method === 'POST') {
+  } else if (pathname === '/api/settings' && req.method === 'POST') {
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    let tooLarge = false;
+    req.on('data', chunk => {
+      if (tooLarge) return;
+      body += chunk;
+      // Settings payloads are tiny (toggles + pricing rows); anything near a
+      // megabyte is garbage — refuse instead of buffering unbounded input.
+      if (body.length > 1e6) {
+        tooLarge = true;
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Payload too large' }));
+        req.destroy();
+      }
+    });
     req.on('end', () => {
+      if (tooLarge) return;
       try {
         const parsed = JSON.parse(body);
         const updated = updateSettings(parsed);
@@ -145,7 +166,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: 'Invalid JSON: ' + err.message }));
       }
     });
-  } else if (req.url === '/api/events') {
+  } else if (pathname === '/api/events') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',

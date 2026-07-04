@@ -51,10 +51,15 @@ async function loadSettingsUI() {
   }
 }
 
+// Prefix values come back from user-editable settings — escape them so a
+// stray quote/angle bracket can't break out of the value="" attribute.
+const escAttr = (s) => String(s)
+  .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
 function addPricingRow(prefix = '', cost = { in: 0, out: 0, cr: 0, cw5: 0, cw1: 0 }) {
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td><input type="text" class="px-prefix" value="${prefix}" placeholder="model-prefix"></td>
+    <td><input type="text" class="px-prefix" value="${escAttr(prefix)}" placeholder="model-prefix"></td>
     <td><input type="number" step="any" class="px-num px-in" value="${cost.in || 0}"></td>
     <td><input type="number" step="any" class="px-num px-out" value="${cost.out || 0}"></td>
     <td><input type="number" step="any" class="px-num px-cr" value="${cost.cr || 0}"></td>
@@ -133,7 +138,12 @@ export function initSettings() {
     if (!confirm('Reset all stats? This permanently clears the recorded trend history and cannot be undone.')) return;
     resetStatsBtn.disabled = true;
     try {
-      const res = await fetch('/api/history/reset', { method: 'POST' });
+      const res = await fetch('/api/history/reset', {
+        method: 'POST',
+        // Server refuses resets without this header, so a stray scripted
+        // POST can't silently capture a new baseline (see server.js).
+        headers: { 'X-Tokenomics-Reset-Confirm': 'manual' }
+      });
       const result = await res.json();
       if (result.success) {
         await fetchHistory();   // redraw trend charts from the now-empty history

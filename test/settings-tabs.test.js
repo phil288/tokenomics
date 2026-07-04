@@ -62,6 +62,16 @@ test('the restore-baseline control is present and wired to DELETE /api/baseline'
   assert.match(SETTINGS_JS, /fetch\('\/api\/baseline',\s*\{\s*method:\s*'DELETE'\s*\}\)/, 'restore not wired to DELETE /api/baseline');
 });
 
+test('reset-stats is wired to POST /api/history/reset with the confirm header', () => {
+  // The server rejects unconfirmed resets; the client must send the header.
+  assert.match(SETTINGS_JS, /X-Tokenomics-Reset-Confirm['"]:\s*['"]manual['"]/, 'reset fetch missing confirm header');
+});
+
+test('pricing prefix values are attribute-escaped before templating', () => {
+  // User-editable prefixes are re-rendered into value="…" — must go through escAttr.
+  assert.match(SETTINGS_JS, /value="\$\{escAttr\(prefix\)\}"/, 'px-prefix must interpolate escAttr(prefix), not raw prefix');
+});
+
 test('save/cancel footer stays outside every tab panel', () => {
   const lastClose = HTML.lastIndexOf('<!-- /Tab:');
   const footer = HTML.indexOf('class="modal-footer"');

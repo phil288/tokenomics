@@ -433,7 +433,7 @@ export function renderHdr(d) {
       <div class="row"><span class="row-label">Requests</span><span class="row-val">${reqs}</span></div>
     </div>
     <div class="divider"></div>
-    <div class="tcell-label" style="margin-bottom:8px">Live window telemetry <span style="opacity:0.6">(current quota window — usage, not savings; resets each window)</span></div>
+    <div class="tcell-label" style="margin-bottom:8px">Headroom telemetry <span style="opacity:0.6">(usage, not savings; persists across restarts)</span></div>
     <div class="token-grid">
       <div class="tcell">
         <div class="tcell-label">Input</div>

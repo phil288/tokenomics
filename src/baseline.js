@@ -15,11 +15,12 @@ const path = require('path');
 //                 pre-reset activity, so we subtract the bucket's value *at reset
 //                 time* (not just drop earlier days) or its bar stays full.
 //   • Caveman   — cumulative session totals.
-//   • Headroom  — the authoritative lifetime savings ledger AND the live window
-//                 telemetry (top-level + per-model). Window telemetry rolls over
-//                 each quota window on its own; offsetting it shows "usage since
-//                 reset" within the current window and naturally clamps to zero
-//                 after a rollover — which reads as reset, so it's consistent.
+//   • Headroom  — the authoritative lifetime savings ledger AND the window
+//                 telemetry (top-level + per-model). The telemetry reaching us
+//                 is the persisted local accumulator (src/headroom-telemetry.js),
+//                 which is monotonic — it never drops when Headroom restarts or
+//                 rolls a quota window — so a plain subtract shows "usage since
+//                 reset" forever, no window-identity gating needed.
 // What is left alone: percentages/ratios, average exec time (an average, not a
 // running total) and quota utilisation bars — none are cumulative counters.
 
@@ -56,13 +57,9 @@ const num = (o, k) => (o && typeof o[k] === 'number') ? o[k] : 0;
 
 // Snapshot the numeric fields of Headroom's window telemetry (top-level totals
 // plus each per-model breakdown) so they can be offset later.
-function snapshotWindow(wt, headroom) {
+function snapshotWindow(wt) {
   const top = {};
   for (const k of WIN_TOP) top[k] = num(wt, k);
-  const latest = (headroom && headroom.latest) || {};
-  top.window_reset_key = (latest.five_hour && latest.five_hour.resets_at)
-    || (latest.seven_day && latest.seven_day.resets_at)
-    || null;
   const by = {};
   for (const [name, m] of Object.entries((wt && wt.by_model) || {})) {
     const e = {};
@@ -83,8 +80,7 @@ function snapshotTotals(stats) {
   const dayRow = daily.find(r => String(r.date) === resetDay) || null;
   const c = stats.caveman || {};
   const life = (stats.headroom && stats.headroom.savings && stats.headroom.savings.lifetime) || {};
-  const headroom = stats.headroom || {};
-  const wt = headroom.window_tokens || {};
+  const wt = (stats.headroom && stats.headroom.window_tokens) || {};
   return {
     t: Date.now(),
     rtk: {
@@ -113,7 +109,7 @@ function snapshotTotals(stats) {
       tokens_saved: life.tokens_saved || 0,
       compression_savings_usd: life.compression_savings_usd || 0,
       requests: life.requests || 0,
-      window: snapshotWindow(wt, headroom),
+      window: snapshotWindow(wt),
     },
   };
 }
@@ -150,27 +146,6 @@ function clearBaseline() {
 }
 
 const sub = (a, b) => Math.max(0, (a || 0) - (b || 0));
-
-function windowBaselineStillApplies(stats, wt, wb) {
-  const latest = (stats.headroom && stats.headroom.latest) || {};
-  const currentResetKey = (latest.five_hour && latest.five_hour.resets_at)
-    || (latest.seven_day && latest.seven_day.resets_at)
-    || null;
-
-  // New baselines remember the quota-window identity. Once Headroom rolls the
-  // live telemetry into a fresh window, the old zero-point no longer describes
-  // the current counters and should not be subtracted.
-  if (wb.window_reset_key && currentResetKey) {
-    return wb.window_reset_key === currentResetKey;
-  }
-
-  // Compatibility for baselines captured before window_reset_key existed: a
-  // smaller rolling counter means Headroom has already reset its own window.
-  if (typeof wt.total_raw === 'number' && typeof wb.total_raw === 'number' && wt.total_raw < wb.total_raw) {
-    return false;
-  }
-  return true;
-}
 
 // Subtract the active baseline from a stats payload IN PLACE and return it.
 // No-op when no baseline is set. collectStats() calls this so every consumer
@@ -243,10 +218,12 @@ function applyBaseline(stats) {
     life.requests = sub(life.requests, b.headroom.requests);
   }
 
-  // ---- Headroom live window telemetry (top-level + per-model) ----
+  // ---- Headroom window telemetry (top-level + per-model) ----
+  // The telemetry is the local monotonic accumulator, so the baseline snapshot
+  // always describes it — subtract unconditionally (clamped at 0).
   const wt = stats.headroom && stats.headroom.window_tokens;
   const wb = b.headroom && b.headroom.window;
-  if (wt && wb && windowBaselineStillApplies(stats, wt, wb)) {
+  if (wt && wb) {
     for (const k of WIN_TOP) {
       if (typeof wt[k] === 'number') wt[k] = sub(wt[k], wb[k]);
     }

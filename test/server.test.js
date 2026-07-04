@@ -112,6 +112,24 @@ test('GET a missing module returns 404', async () => {
   assert.equal(res.status, 404);
 });
 
+test('GET /web/*.js with a query string still serves the module (cache-buster case)', async () => {
+  // Module routes must match on path only — /web/main.js?v=123 is still main.js.
+  const res = await fetch(base + '/web/main.js?v=123');
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /javascript/);
+});
+
+test('POST /api/settings rejects oversized payloads with 413', async () => {
+  const res = await fetch(base + '/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ RTK_DATA_HOME: 'x'.repeat(1_100_000) }),
+  }).catch(() => null);
+  // Server may destroy the socket after replying; accept either a clean 413
+  // or a reset connection — but never a 200.
+  if (res) assert.equal(res.status, 413);
+});
+
 test('path traversal via /web/ is blocked', async () => {
   // literal ../ escapes the regex but is caught by the resolve+prefix guard → 403
   const literal = await rawGet('/web/../../server.js');
@@ -162,10 +180,20 @@ test('GET /api/history returns a JSON array', async () => {
   assert.ok(Array.isArray(await res.json()));
 });
 
+test('POST /api/history/reset without the confirm header is rejected and writes no baseline', async () => {
+  const baselineFile = path.join(dataDir, 'baseline.json');
+  const res = await fetch(base + '/api/history/reset', { method: 'POST' });
+  assert.equal(res.status, 400);
+  assert.ok(!fs.existsSync(baselineFile), 'unconfirmed reset must not write baseline.json');
+});
+
 test('POST /api/history/reset clears history and writes a baseline; DELETE /api/baseline removes it', async () => {
   const baselineFile = path.join(dataDir, 'baseline.json');
 
-  const reset = await fetch(base + '/api/history/reset', { method: 'POST' });
+  const reset = await fetch(base + '/api/history/reset', {
+    method: 'POST',
+    headers: { 'X-Tokenomics-Reset-Confirm': 'manual' },
+  });
   assert.equal(reset.status, 200);
   assert.equal((await reset.json()).success, true);
   // reset captures the current absolute totals as a baseline on disk...
