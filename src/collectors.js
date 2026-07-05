@@ -595,18 +595,10 @@ async function collectCursor() {
   let token = settings.CURSOR_ACCESS_TOKEN || process.env.CURSOR_ACCESS_TOKEN;
 
   if (!token) {
-    try {
-      const dbPath = path.join(HOME, '.config', 'Cursor', 'User', 'globalStorage', 'state.vscdb');
-      if (fs.existsSync(dbPath)) {
-        const { DatabaseSync } = require('node:sqlite');
-        const db = new DatabaseSync(dbPath);
-        const row = db.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'").get();
-        if (row && row.value) {
-          token = row.value;
-        }
-      }
-    } catch (e) {
-      console.error('Failed to read Cursor token from DB:', e.message);
+    const homes = [...new Set([HOME, ...configuredHomes()])];
+    for (const home of homes) {
+      token = readCursorAccessToken(home);
+      if (token) break;
     }
   }
 
@@ -636,6 +628,32 @@ async function collectCursor() {
   } catch (e) {
     return { error: e.message };
   }
+}
+
+function cursorStateDbPaths(home) {
+  return [
+    path.join(home, '.config', 'Cursor', 'User', 'globalStorage', 'state.vscdb'),
+    path.join(home, 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'state.vscdb'),
+  ];
+}
+
+function readCursorAccessToken(home) {
+  for (const dbPath of cursorStateDbPaths(home)) {
+    try {
+      if (!fs.existsSync(dbPath)) continue;
+      const { DatabaseSync } = require('node:sqlite');
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        const row = db.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'").get();
+        if (row && row.value) return row.value;
+      } finally {
+        db.close();
+      }
+    } catch (e) {
+      console.error(`Failed to read Cursor token from DB ${dbPath}:`, e.message);
+    }
+  }
+  return '';
 }
 
 // ---- Antigravity (`agy`) usage by model group ----
@@ -1233,4 +1251,5 @@ module.exports = {
   headroomProxyLogPath,
   configuredHomes,
   collectUsers,
+  readCursorAccessToken,
 };

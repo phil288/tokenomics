@@ -56,3 +56,19 @@ test('TOKENOMICS_HOMES aggregates Caveman and Headroom state across homes', asyn
   assert.equal(headroom.savings.lifetime.tokens_saved, 3000);
   assert.equal(headroom.savings.lifetime.requests, 7);
 });
+
+test('Cursor token lookup supports macOS globalStorage path', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-cursor-home-'));
+  const dbDir = path.join(root, 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage');
+  const dbPath = path.join(dbDir, 'state.vscdb');
+  fs.mkdirSync(dbDir, { recursive: true });
+
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT)');
+  db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)').run('cursorAuth/accessToken', 'cursor-token');
+  db.close();
+
+  const { readCursorAccessToken } = require('../src/collectors');
+  assert.equal(readCursorAccessToken(root), 'cursor-token');
+});
