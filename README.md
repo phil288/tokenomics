@@ -158,6 +158,7 @@ Server-level configurations can be specified using environment variables (e.g. i
 | `HISTORY_INTERVAL_MS` | `60000` | history record cadence (ms) |
 | `HISTORY_MAX` | `5000` | max retained history points (~3.5 days at 60s) |
 | `RTK_DATA_HOME` | auto | pin RTK to a single data dir instead of aggregating all of them |
+| `TOKENOMICS_HOMES` | current `HOME` | comma-separated user homes to aggregate, e.g. `/Users/alice,/Users/bob` |
 
 > **RTK across launchers:** RTK stores its DB under `$XDG_DATA_HOME/rtk`, and different
 > launchers set `XDG_DATA_HOME` differently (a VSCode *snap* uses
@@ -166,6 +167,38 @@ Server-level configurations can be specified using environment variables (e.g. i
 > database (deduped by real path), runs `rtk gain -g -a` against each, and **merges** the
 > totals and daily/weekly/monthly breakdowns — so no project or launcher is missed. Set
 > `RTK_DATA_HOME` to pin a single location instead.
+
+> **Multi-user machines:** set `TOKENOMICS_HOMES` to a comma-separated list of
+> home directories when Tokenomics runs as a shared service. RTK databases,
+> Caveman ledgers, Claude history, and Headroom state are read from each listed
+> home and merged into one dashboard. Example:
+>
+> ```bash
+> TOKENOMICS_HOMES=/Users/alice,/Users/bob node server.js
+> ```
+
+## Run as a service (macOS / launchd)
+
+For a machine-wide dashboard on macOS, install the checkout in `/Users/Shared`
+and run it with a LaunchDaemon. The included installer creates
+`/Library/LaunchDaemons/com.tokenomics.dashboard.plist`, serves on port `8788`,
+and writes dashboard state/logs to `/Users/Shared/tokenomics-data`.
+
+```bash
+sudo TOKENOMICS_HOMES=/Users/alice,/Users/bob \
+  TOKENOMICS_DIR=/Users/Shared/tokenomics \
+  TOKENOMICS_DATA_DIR=/Users/Shared/tokenomics-data \
+  PORT=8788 \
+  ./scripts/install-macos-launchd.sh
+```
+
+Manage it with:
+
+```bash
+sudo launchctl print system/com.tokenomics.dashboard
+sudo launchctl kickstart -k system/com.tokenomics.dashboard
+sudo launchctl bootout system /Library/LaunchDaemons/com.tokenomics.dashboard.plist
+```
 
 ## Data sources
 

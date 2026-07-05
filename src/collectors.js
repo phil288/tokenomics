@@ -10,6 +10,14 @@ const { accumulateWindowTelemetry } = require('./headroom-telemetry');
 const HOME = process.env.HOME || os.homedir();
 const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
 
+function configuredHomes() {
+  const raw = process.env.TOKENOMICS_HOMES || '';
+  const homes = raw.split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  return homes.length ? homes : [HOME];
+}
+
 const EXEC_PATH = [
   path.join(HOME, '.local', 'bin'),
   path.join(HOME, 'bin'),
@@ -33,12 +41,14 @@ function readFile(filePath) {
 
 function listSnapShareDirs() {
   const dirs = [];
-  const snapCode = path.join(HOME, 'snap', 'code');
-  try {
-    for (const rev of fs.readdirSync(snapCode)) {
-      dirs.push(path.join(snapCode, rev, '.local', 'share'));
-    }
-  } catch { }
+  for (const home of configuredHomes()) {
+    const snapCode = path.join(home, 'snap', 'code');
+    try {
+      for (const rev of fs.readdirSync(snapCode)) {
+        dirs.push(path.join(snapCode, rev, '.local', 'share'));
+      }
+    } catch { }
+  }
   return dirs;
 }
 
@@ -47,7 +57,8 @@ function rtkDataHomes() {
   if (customHome) return [customHome];
   const candidates = [
     process.env.XDG_DATA_HOME,
-    path.join(HOME, '.local', 'share'),
+    ...configuredHomes().map(home => path.join(home, '.local', 'share')),
+    ...configuredHomes().map(home => path.join(home, 'Library', 'Application Support')),
     ...listSnapShareDirs(),
   ].filter(Boolean);
 
@@ -220,7 +231,9 @@ async function probeRtkInstalled() {
 
 async function collectRTK() {
   const homes = rtkDataHomes();
-  const envs = homes.length ? homes.map(h => ({ XDG_DATA_HOME: h })) : [{}];
+  const envs = settings.RTK_DATA_HOME || process.env.RTK_DATA_HOME
+    ? (homes.length ? homes.map(h => ({ XDG_DATA_HOME: h })) : [{}])
+    : configuredHomes().map(home => ({ HOME: home }));
 
   const [results, install] = await Promise.all([
     Promise.all(
@@ -244,27 +257,36 @@ async function collectRTK() {
 
 // Caveman's session ledger. Overridable (settings/env) so tests can point it at
 // a temp fixture, mirroring HEADROOM_SESSION_STATS_PATH.
-function cavemanHistoryPath() {
+function cavemanHistoryPath(home = HOME) {
   return settings.CAVEMAN_HISTORY_PATH || process.env.CAVEMAN_HISTORY_PATH
-    || path.join(HOME, '.claude', '.caveman-history.jsonl');
+    || path.join(home, '.claude', '.caveman-history.jsonl');
 }
 
 async function collectCaveman() {
-  const statusPath = path.join(HOME, '.claude', '.caveman-statusline-suffix');
-  const [modeRaw, historyRaw, statusRaw] = await Promise.all([
-    readFile(path.join(HOME, '.claude', '.caveman-active')),
-    readFile(cavemanHistoryPath()),
-    readFile(statusPath),
-  ]);
-
-  const mode = (modeRaw || 'unknown').trim();
-
+  const homes = configuredHomes();
   const latest = new Map();
-  if (historyRaw) {
+  let mode = 'unknown';
+  let statuslineSavedTokens = 0;
+  let statuslineUpdatedAt = null;
+
+  for (const home of homes) {
+    const statusPath = path.join(home, '.claude', '.caveman-statusline-suffix');
+    const [modeRaw, historyRaw, statusRaw] = await Promise.all([
+      readFile(path.join(home, '.claude', '.caveman-active')),
+      readFile(cavemanHistoryPath(home)),
+      readFile(statusPath),
+    ]);
+
+    const homeMode = (modeRaw || '').trim();
+    if (homeMode && homeMode !== 'unknown') mode = homeMode;
+    statuslineSavedTokens += parseCompactTokenCount(statusRaw);
+    statuslineUpdatedAt = maxIso(statuslineUpdatedAt, fileMtimeISO(statusPath));
+
+    if (!historyRaw) continue;
     for (const line of historyRaw.split('\n').filter(l => l.trim())) {
       try {
         const e = JSON.parse(line);
-        const key = e.session_id || `_${latest.size}`;
+        const key = e.session_id ? `${home}:${e.session_id}` : `${home}:_${latest.size}`;
         const prev = latest.get(key);
         if (!prev || (e.ts || 0) >= (prev.ts || 0)) latest.set(key, e);
       } catch { }
@@ -278,9 +300,6 @@ async function collectCaveman() {
     totalSavedTokens += e.est_saved_tokens || 0;
     totalSavedUsd += e.est_saved_usd || 0;
   }
-
-  const statuslineSavedTokens = parseCompactTokenCount(statusRaw);
-  const statuslineUpdatedAt = fileMtimeISO(statusPath);
 
   return {
     mode, session_count: sessions.length, total_output_tokens: totalOutputTokens,
@@ -309,13 +328,13 @@ function parseCompactTokenCount(raw) {
 //                             must never be treated as a cumulative saving.
 // We read both and return the subscription object (so the Claude quota card +
 // telemetry keep working) with the savings ledger attached as `.savings`.
-function headroomSubPath() {
+function headroomSubPath(home = HOME) {
   return settings.HEADROOM_SUBSCRIPTION_STATE_PATH || process.env.HEADROOM_SUBSCRIPTION_STATE_PATH
-    || path.join(HOME, '.headroom', 'subscription_state.json');
+    || path.join(home, '.headroom', 'subscription_state.json');
 }
-function headroomSavingsPath() {
+function headroomSavingsPath(home = HOME) {
   return settings.HEADROOM_SAVINGS_PATH || process.env.HEADROOM_SAVINGS_PATH
-    || path.join(HOME, '.headroom', 'proxy_savings.json');
+    || path.join(home, '.headroom', 'proxy_savings.json');
 }
 
 function headroomHealthUrl() {
@@ -360,14 +379,22 @@ async function probeHeadroomHealth() {
 }
 
 async function collectHeadroom() {
-  const [subRaw, savRaw, health] = await Promise.all([
-    readFile(headroomSubPath()),
-    readFile(headroomSavingsPath()),
-    probeHeadroomHealth(),
-  ]);
+  const health = await probeHeadroomHealth();
   const parse = (raw) => { if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } };
-  const sub = parse(subRaw);
-  let savings = parse(savRaw);
+  const subs = [];
+  const savingsDocs = [];
+  for (const home of configuredHomes()) {
+    const [subRaw, savRaw] = await Promise.all([
+      readFile(headroomSubPath(home)),
+      readFile(headroomSavingsPath(home)),
+    ]);
+    const sub = parse(subRaw);
+    const sav = parse(savRaw);
+    if (sub) subs.push(sub);
+    if (sav) savingsDocs.push(sav);
+  }
+  const sub = mergeHeadroomSubscriptions(subs);
+  let savings = mergeHeadroomSavings(savingsDocs);
   // proxy_savings.json also carries a large per-model `history[]` (5000-cap
   // snapshots, ~MBs) and a `projects` map. Nothing in the stats pipeline reads
   // them, and this object rides every 10s SSE frame — strip them here. The
@@ -384,6 +411,64 @@ async function collectHeadroom() {
   // reset flow (baseline offset).
   const windowTokens = accumulateWindowTelemetry(sub ? sub.window_tokens : null);
   return { ...base, window_tokens: windowTokens, savings, health };
+}
+
+function addNums(target, source, keys) {
+  for (const key of keys) target[key] = (Number(target[key]) || 0) + (Number(source && source[key]) || 0);
+}
+
+function newestByIso(items, pick) {
+  let best = null, bestTime = null;
+  for (const item of items) {
+    const value = pick(item);
+    const time = value ? Date.parse(value) : NaN;
+    if (!Number.isNaN(time) && (bestTime === null || time > bestTime)) {
+      best = item;
+      bestTime = time;
+    }
+  }
+  return best;
+}
+
+function mergeHeadroomSubscriptions(list) {
+  if (!list.length) return null;
+  if (list.length === 1) return { ...list[0], sources: 1 };
+  const latestSource = newestByIso(list, s => s.last_active_at || (s.latest && s.latest.polled_at)) || list[0];
+  const out = { ...latestSource, sources: list.length };
+  out.window_tokens = {};
+  for (const s of list) {
+    addNums(out.window_tokens, s.window_tokens || {}, [
+      'input', 'output', 'input_tokens', 'output_tokens', 'cache_creation_input_tokens',
+      'cache_read_input_tokens', 'cache_reads', 'cache_writes_5m', 'cache_writes_1h',
+      'cache_writes_total', 'total_raw', 'weighted_token_equivalent',
+      'cache_reads', 'cache_writes', 'requests'
+    ]);
+    for (const [model, row] of Object.entries((s.window_tokens && s.window_tokens.by_model) || {})) {
+      out.window_tokens.by_model ||= {};
+      out.window_tokens.by_model[model] ||= {};
+      addNums(out.window_tokens.by_model[model], row, [
+        'input', 'output', 'cache_reads', 'cache_writes_5m',
+        'cache_writes_1h', 'cache_writes_total', 'total_raw',
+        'weighted_token_equivalent'
+      ]);
+    }
+  }
+  return out;
+}
+
+function mergeHeadroomSavings(list) {
+  if (!list.length) return null;
+  if (list.length === 1) return list[0];
+  const out = { sources: list.length, lifetime: {} };
+  for (const doc of list) {
+    addNums(out.lifetime, doc.lifetime || {}, [
+      'tokens_saved', 'compression_savings_usd', 'requests',
+      'total_input_tokens', 'total_input_cost_usd'
+    ]);
+  }
+  const latestDisplay = newestByIso(list.map(d => d.display_session).filter(Boolean), d => d.last_activity_at);
+  if (latestDisplay) out.display_session = latestDisplay;
+  return out;
 }
 
 async function collectCursor() {
@@ -597,25 +682,33 @@ function headroomLastUsed(headroom) {
       : null,
     sav && sav.display_session && sav.display_session.last_activity_at,
   );
-  return maxIso(candidate, fileMtimeISO(headroomSubPath()), fileMtimeISO(headroomSavingsPath()));
+  const mtimes = [];
+  for (const home of configuredHomes()) {
+    mtimes.push(fileMtimeISO(headroomSubPath(home)), fileMtimeISO(headroomSavingsPath(home)));
+  }
+  return maxIso(candidate, ...mtimes);
 }
 
 // Caveman writes its JSONL log only at session end, so it lags during an active
 // session. The .caveman-active / statusline files are touched live, so take the
 // most recent signal across all three.
 async function cavemanLastUsed() {
-  const histTs = await maxJsonlLastUsed(cavemanHistoryPath(), 'ts');
-  return maxIso(
-    histTs,
-    fileMtimeISO(path.join(HOME, '.claude', '.caveman-active')),
-    fileMtimeISO(path.join(HOME, '.claude', '.caveman-statusline-suffix')),
-  );
+  const values = [];
+  for (const home of configuredHomes()) {
+    values.push(
+      await maxJsonlLastUsed(cavemanHistoryPath(home), 'ts'),
+      fileMtimeISO(path.join(home, '.claude', '.caveman-active')),
+      fileMtimeISO(path.join(home, '.claude', '.caveman-statusline-suffix')),
+    );
+  }
+  return maxIso(...values);
 }
 
 async function collectLastUsed(headroom) {
   const [caveman, claude] = await Promise.all([
     cavemanLastUsed(),
-    maxJsonlLastUsed(path.join(HOME, '.claude', 'history.jsonl'), 'timestamp'),
+    Promise.all(configuredHomes().map(home => maxJsonlLastUsed(path.join(home, '.claude', 'history.jsonl'), 'timestamp')))
+      .then(values => maxIso(...values)),
   ]);
   return { rtk: maxRtkLastUsed(), caveman, claude, headroom: headroomLastUsed(headroom) };
 }
@@ -629,13 +722,13 @@ async function collectLastUsed(headroom) {
 // Served lazily via /api/activity (NOT the 10s SSE loop): proxy.log is large and
 // growing, so we only read its tail.
 
-function headroomSessionStatsPath() {
+function headroomSessionStatsPath(home = HOME) {
   return settings.HEADROOM_SESSION_STATS_PATH || process.env.HEADROOM_SESSION_STATS_PATH
-    || path.join(HOME, '.headroom', 'session_stats.jsonl');
+    || path.join(home, '.headroom', 'session_stats.jsonl');
 }
-function headroomProxyLogPath() {
+function headroomProxyLogPath(home = HOME) {
   return settings.HEADROOM_PROXY_LOG_PATH || process.env.HEADROOM_PROXY_LOG_PATH
-    || path.join(HOME, '.headroom', 'logs', 'proxy.log');
+    || path.join(home, '.headroom', 'logs', 'proxy.log');
 }
 
 // Read the last `maxBytes` of a (possibly large, growing) text file. Returns ''
@@ -827,7 +920,9 @@ async function collectActivity({ limit = 50 } = {}) {
   // as the session progresses; the file is tiny, so a full read is fine).
   // before = what the session would have cost without compression (output +
   // estimated saved), after = actual output tokens.
-  const cavRaw = await readFile(cavemanHistoryPath());
+  const cavRaw = (await Promise.all(configuredHomes().map(home => readFile(cavemanHistoryPath(home)))))
+    .filter(Boolean)
+    .join('\n');
   const cavEvents = [];
   for (const line of cavRaw ? cavRaw.split('\n') : []) {
     const s = line.trim();
@@ -854,7 +949,7 @@ async function collectActivity({ limit = 50 } = {}) {
   for (const e of cavEvents.slice(-limit)) out.push(e);
 
   // Headroom MCP compress events (tail of session_stats.jsonl)
-  const statRaw = tailFileSync(headroomSessionStatsPath());
+  const statRaw = configuredHomes().map(home => tailFileSync(headroomSessionStatsPath(home))).filter(Boolean).join('\n');
   const compressEvents = [];
   for (const line of statRaw ? statRaw.split('\n') : []) {
     const e = parseSessionStatLine(line);
@@ -875,7 +970,7 @@ async function collectActivity({ limit = 50 } = {}) {
   // Headroom proxy requests — PERF lines from the tail of proxy.log. We also map
   // request_id → body_bytes from the sibling `outbound_request` lines, so each
   // row can show the request's wire size (the body itself is never stored).
-  const logRaw = tailFileSync(headroomProxyLogPath());
+  const logRaw = configuredHomes().map(home => tailFileSync(headroomProxyLogPath(home))).filter(Boolean).join('\n');
   const logLines = logRaw ? logRaw.split('\n') : [];
   const bodyBytesById = {};
   for (const line of logLines) {
@@ -989,4 +1084,5 @@ module.exports = {
   headroomSavingsPath,
   headroomSessionStatsPath,
   headroomProxyLogPath,
+  configuredHomes,
 };
