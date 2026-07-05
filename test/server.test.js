@@ -100,7 +100,7 @@ test('GET /index.css serves the stylesheet', async () => {
 });
 
 test('GET /web/*.js serves frontend modules as JavaScript', async () => {
-  for (const mod of ['main.js', 'format.js', 'pricing.js', 'cards.js']) {
+  for (const mod of ['main.js', 'format.js', 'pricing.js', 'cards.js', 'cards-claude.js']) {
     const res = await fetch(`${base}/web/${mod}`);
     assert.equal(res.status, 200, `${mod} should be 200`);
     assert.match(res.headers.get('content-type'), /javascript/);

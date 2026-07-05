@@ -168,13 +168,14 @@ The application is structured as a **single-file backend** (`server.js`) and a *
   - Records compact snapshots of historical data to `data/history.jsonl` every minute (`HISTORY_INTERVAL_MS`, default: `60000`), capped at `HISTORY_MAX` (default: `5000`) entries.
   - Serves a family of **on-demand deep-analysis endpoints** under `/api/analysis/*` (§7). These are **not** part of the 10 s SSE loop — they run only when the browser's Analysis tab fetches them, because they read SQLite row-by-row and tail multi-MB logs.
 - **`src/analysis.js`** (CommonJS): all `/api/analysis/*` aggregations. Event-shaped — reads the tools' own ledgers (RTK SQLite, caveman JSONL, Headroom savings history + log tails) and filters to the baseline cut (§6). Requires `collectors.js` (shared helpers: `rtkDataHomes`, `tailFileSync`, `cavemanHistoryPath`, headroom path resolvers, `parseProxyPerfLine`/`parseSessionStatLine`) and `baseline.js` (`getBaseline`) — no require cycle.
+- **Collector modules**: `src/collectors.js` is the small public facade/orchestrator. Tool-specific logic lives in `collectors-rtk.js`, `collectors-caveman.js`, `collectors-headroom.js`, `collectors-cursor.js`, `collectors-antigravity.js`, and `collectors-activity.js`; shared home/path/I/O helpers live in `collector-utils.js`. Keep `collectors.js` under 500 lines and add new collector behavior to the relevant tool module rather than growing the facade.
 - **`index.html`**:
   - The HTML layout structure. Links to `/index.css` and loads `/web/main.js` as an ES module.
 - **`index.css`**:
   - The styling system with a customized, clean theme stylesheet with dark, light, and automatic theme support.
 - **`src/web/*.js`** — the client-side dashboard, split into ES modules (served by `server.js` under `/web/`):
   - `main.js` — entry point: wires the `/api/events` SSE stream to the renderers, owns the refresh countdown + live clock, and bootstraps every other module.
-  - `cards.js` — per-card HTML renderers (RTK, Caveman, Cursor, Antigravity, Claude, Headroom, hero).
+  - `cards.js` — small public facade for per-card renderers. Card implementation is split by family: `cards-core.js` (RTK/Caveman/hero), `cards-common.js` (shared model/user/progress helpers), `cards-cursor.js`, `cards-antigravity.js`, `cards-claude.js`, `cards-headroom.js`, and `cards-version.js`. Keep `cards.js` under 500 lines and add new card behavior to the relevant module rather than growing the facade.
   - `charts.js` — the RTK daily bar chart and history trend lines (**Chart.js**, loaded from a CDN).
   - `pricing.js` — the client `PRICING` matrix and per-model cost/weight math.
   - `format.js` — pure formatting helpers (token/USD/time formatting).
@@ -184,6 +185,7 @@ The application is structured as a **single-file backend** (`server.js`) and a *
 - The three dashboard views are tabs in one page (`#view-overview` / `#view-activity` / `#view-analysis`), not separate routes.
 - **`data/`** (gitignored):
   - Created at runtime to store the `history.jsonl` file.
+  - Can be moved with `TOKENOMICS_DATA_DIR`; machine-wide macOS installs put it under `/Users/Shared/tokenomics-data` with root-only (`700`) permissions because settings may contain credentials.
 
 ## 3. Critical Constraints & Rules
 
@@ -234,13 +236,13 @@ Understanding how each source is resolved is crucial for debugging:
 
 ### 1. RTK (Rust Token Killer)
 - Resolved by running the CLI command `rtk gain -g -a`.
-- Since different launchers (like snaps) specify different `XDG_DATA_HOME` paths, `server.js` scans candidate shared directories (e.g. `~/.local/share`, `~/snap/code/<rev>/.local/share`), finds all active SQLite history databases, queries each individually using `rtk gain -g -a`, and merges the daily, weekly, and monthly totals dynamically.
+- Since different launchers (like snaps) specify different `XDG_DATA_HOME` paths, `server.js` scans candidate shared directories (e.g. `~/.local/share`, `~/snap/code/<rev>/.local/share`, and macOS `~/Library/Application Support`), finds all active SQLite history databases, queries each individually using `rtk gain -g -a`, and merges the daily, weekly, and monthly totals dynamically. In multi-home mode (`TOKENOMICS_HOMES`), configured homes are deduped, and RTK probes pass both a matching `HOME` and the discovered `XDG_DATA_HOME` where possible so Linux/Snap and macOS data locations both resolve correctly.
 - Pinned to a specific folder if `RTK_DATA_HOME` is set.
 - The Analysis view reads the SQLite `commands` table **directly** (via `node:sqlite`, same guarded pattern as `readRtkActivity`/`collectRtkTotals`). Columns of note: **`project_path`** (per-command repo attribution — used only by the analysis view, no other consumer) and **`rtk_cmd`**/`original_cmd` (grouped into command types). **Loss convention:** `saved_tokens < 0` **never occurs** — RTK records a loss as `saved_tokens = 0` with `output_tokens > input_tokens`, so gain/loss is always derived from the input/output delta (matching `collectRtkTotals`). **Timestamp trap:** rows mix `+00:00` and `Z` suffixes, so baseline filtering is done in JS via `Date.parse(ts) >= cut`, **never** by lexicographic SQL string compare against `toISOString()` (`Z` < `+`).
 
 ### 2. Caveman
 - Reads `~/.claude/.caveman-active` to determine the active mode.
-- Parses the JSON lines file at `cavemanHistoryPath()` (`~/.claude/.caveman-history.jsonl`, overridable via `CAVEMAN_HISTORY_PATH` settings/env — used by both `collectCaveman()` and the Analysis reader) to calculate session counts, total output tokens, and estimated USD saved. Only the latest log entry per `session_id` is counted **for the totals**.
+- Parses the JSON lines file at `cavemanHistoryPath()` (`~/.claude/.caveman-history.jsonl`, overridable via `CAVEMAN_HISTORY_PATH` settings/env — used by both `collectCaveman()` and the Analysis reader) to calculate session counts, total output tokens, and estimated USD saved. Only the latest log entry per `session_id` is counted **for the totals**. In `TOKENOMICS_HOMES` mode, each home is read independently and session IDs are namespaced by home before totals are merged.
 - The JSONL is actually a **per-session time series** (many rows per `session_id`, appended as the session runs), with `ts` (**ms epoch**), `mode`, `model`, `output_tokens`, `est_saved_tokens`, `est_saved_usd`. `collectCaveman()` collapses it to latest-per-session; the Analysis view reads **all** rows (growth curves, by-model, by-mode). Caveman is also an **Activity feed source** (`collectActivity()`): one row per event line, `before = output_tokens + est_saved_tokens`, `after = output_tokens`.
 
 ### 3. Headroom
@@ -249,6 +251,7 @@ Understanding how each source is resolved is crucial for debugging:
   - **Subscription state** — `~/.headroom/subscription_state.json` (`HEADROOM_SUBSCRIPTION_STATE_PATH`). Holds quota windows (`latest.five_hour` / `seven_day`, used by the Claude card) and raw `window_tokens` telemetry. ⚠️ raw `window_tokens` **resets whenever the Headroom proxy restarts (e.g. every PC reboot) or a quota window rolls** — it is *usage telemetry, not savings*. Never treat `window_tokens.cache_reads` as a cumulative saving (old code did `cache_reads × 0.9`, producing a phantom sawtooth that did not match `headroom perf`).
 - `collectHeadroom()` returns the subscription object with the savings ledger attached as `.savings` — but its `window_tokens` is **not the raw source value**: it is replaced by the persisted local accumulator from `src/headroom-telemetry.js` (state file `data/headroom-telemetry.json`). The accumulator folds in only the newly observed growth of the raw counters (top-level + `by_model`), treats a shrunk counter as a source reset (the whole new value is new usage), and — when the raw source is missing/unreadable — returns the persisted totals **without touching its `last` snapshot** (updating `last` to zeros on a failed read would double-count still-growing raw counters on the next successful read). Result: the card's telemetry survives PC/proxy restarts and window rollovers, and only "resets" via the dashboard's own reset flow (§6 baseline offset — non-destructive; the accumulator file itself is never wiped by a reset).
 - The accumulated `window_tokens` is **monotonic** — it only ever grows. This is why `applyBaseline()` subtracts the window baseline unconditionally (no quota-window-identity gating; the old `window_reset_key` guard was removed when the accumulator landed). It is still *usage, not savings* — never build a saving out of it.
+- In `TOKENOMICS_HOMES` mode, subscription and savings files are read from every configured home in parallel, numeric lifetime/window counters are summed, and recency fields use the newest timestamp. Per-user status rows are exposed on the card data for RTK, Caveman, Claude, and Headroom.
 
 ### 4. Cursor
 - Queries the Connect RPC endpoint `https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` to fetch account quotas and billing cycles.
@@ -278,6 +281,8 @@ Before finishing any code change:
 ### Environment Variables
 For testing different scenarios, you can override settings:
 - `PORT` (default: `3000`)
+- `TOKENOMICS_DATA_DIR` (default: `data/`; use a private root-owned directory for shared LaunchDaemon installs because it can hold settings, baselines, history, and Headroom telemetry)
+- `TOKENOMICS_HOMES` (comma-separated home directories to aggregate for machine-wide/multi-user service installs; duplicates are ignored)
 - `REFRESH_MS` (default: `10000`)
 - `HISTORY_INTERVAL_MS` (default: `60000`)
 - `HISTORY_MAX` (default: `5000`)

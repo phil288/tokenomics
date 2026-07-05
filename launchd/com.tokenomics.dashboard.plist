@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tokenomics.dashboard</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>node</string>
+    <string>/Users/Shared/tokenomics/server.js</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/Shared/tokenomics</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/Shared</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PORT</key>
+    <string>8788</string>
+    <key>TOKENOMICS_HOMES</key>
+    <string>/Users/username1,/Users/username2</string>
+    <key>TOKENOMICS_DATA_DIR</key>
+    <string>/Users/Shared/tokenomics-data</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/Shared/tokenomics-data/tokenomics.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/Shared/tokenomics-data/tokenomics.err.log</string>
+</dict>
+</plist>

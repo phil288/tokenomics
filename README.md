@@ -149,7 +149,7 @@ Clicking the gear icon (⚙️) in the top-right corner of the dashboard allows 
 
 ### 2. Environment Variables
 
-Server-level configurations can be specified using environment variables (e.g. in your systemd service unit or shell):
+Server-level configuration can be specified with environment variables (for example, in a systemd service unit or shell):
 
 | Var | Default | Meaning |
 |-----|---------|---------|
@@ -157,16 +157,39 @@ Server-level configurations can be specified using environment variables (e.g. i
 | `REFRESH_MS` | `10000` | live push / countdown interval (ms) |
 | `HISTORY_INTERVAL_MS` | `60000` | history record cadence (ms) |
 | `HISTORY_MAX` | `5000` | max retained history points (~3.5 days at 60s) |
-| `RTK_DATA_HOME` | auto | pin RTK to a single data dir instead of aggregating all of them |
+| `RTK_DATA_HOME` | auto | pin RTK to a single data dir instead of aggregating all discovered dirs |
+| `TOKENOMICS_HOMES` | current `HOME` | comma-separated user homes to aggregate, e.g. `/Users/alice,/Users/bob` |
+| `TOKENOMICS_DATA_DIR` | `data/` | dashboard-owned state directory for settings, history, baselines, and telemetry |
 
-> **RTK across launchers:** RTK stores its DB under `$XDG_DATA_HOME/rtk`, and different
-> launchers set `XDG_DATA_HOME` differently (a VSCode *snap* uses
-> `~/snap/code/<rev>/.local/share`, a plain service has none → `~/.local/share`). So your
-> usage can be split across several `history.db` files. Tokenomics finds **every** RTK
-> database (deduped by real path), runs `rtk gain -g -a` against each, and **merges** the
-> totals and daily/weekly/monthly breakdowns — so no project or launcher is missed. Set
-> `RTK_DATA_HOME` to pin a single location instead.
+> **RTK across launchers:** RTK stores its DB under `$XDG_DATA_HOME/rtk`, and different launchers set `XDG_DATA_HOME` differently. Tokenomics finds every RTK database it can see, dedupes by real path, runs `rtk gain -g -a` against each, and merges totals plus daily/weekly/monthly breakdowns. Set `RTK_DATA_HOME` to pin a single location instead.
 
+> **Multi-user machines:** set `TOKENOMICS_HOMES` to a comma-separated list of home directories when Tokenomics runs as a shared service. RTK databases, Caveman ledgers, Claude history, and Headroom state are read from each listed home and merged into one dashboard.
+
+```bash
+TOKENOMICS_HOMES=/Users/alice,/Users/bob node server.js
+```
+
+## Run as service (macOS / launchd)
+
+For a machine-wide dashboard on macOS, install the checkout in `/Users/Shared` and run it as a LaunchDaemon. The included installer creates `/Library/LaunchDaemons/com.tokenomics.dashboard.plist`, serves on port `8788`, and writes root-owned dashboard state/logs to `/Users/Shared/tokenomics-data`.
+
+`TOKENOMICS_DATA_DIR` may contain settings and credentials, so the installer restricts it to root-only access (`700`).
+
+```bash
+sudo TOKENOMICS_HOMES=/Users/alice,/Users/bob \
+  TOKENOMICS_DIR=/Users/Shared/tokenomics \
+  TOKENOMICS_DATA_DIR=/Users/Shared/tokenomics-data \
+  PORT=8788 \
+  ./scripts/install-macos-launchd.sh
+```
+
+Manage it with:
+
+```bash
+sudo launchctl print system/com.tokenomics.dashboard
+sudo launchctl kickstart -k system/com.tokenomics.dashboard
+sudo launchctl bootout system /Library/LaunchDaemons/com.tokenomics.dashboard.plist
+```
 ## Data sources
 
 | Card | Source |
