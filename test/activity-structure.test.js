@@ -112,8 +112,8 @@ test('state.js holds activity feed + filter state', () => {
 });
 
 test('cards.js exports the RTK-install + Headroom-health pill helpers', () => {
-  assert.match(CARDS_JS, /export function rtkInstallPill\b/, 'rtkInstallPill must be exported for reuse');
-  assert.match(CARDS_JS, /export function headroomHealthPill\b/, 'headroomHealthPill must be exported for reuse');
+  assert.match(CARDS_JS, /export \{[^}]*rtkInstallPill[^}]*\} from '\.\/cards-core\.js'/, 'rtkInstallPill must be exported for reuse');
+  assert.match(CARDS_JS, /export \{[^}]*headroomHealthPill[^}]*\} from '\.\/cards-headroom\.js'/, 'headroomHealthPill must be exported for reuse');
 });
 
 test('Activity view renders an RTK/Headroom status strip from the SSE snapshot', () => {

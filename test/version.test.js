@@ -89,7 +89,9 @@ test('index.html has the update-banner element', () => {
 });
 
 test('cards.js exports renderUpdateBanner and gates on update_available', () => {
-  const src = read('src/web/cards.js');
+  const facade = read('src/web/cards.js');
+  const src = read('src/web/cards-version.js');
+  assert.match(facade, /export \{ renderUpdateBanner \} from '\.\/cards-version\.js'/);
   assert.match(src, /export function renderUpdateBanner/);
   assert.match(src, /update_available/);
 });

@@ -175,7 +175,7 @@ The application is structured as a **single-file backend** (`server.js`) and a *
   - The styling system with a customized, clean theme stylesheet with dark, light, and automatic theme support.
 - **`src/web/*.js`** — the client-side dashboard, split into ES modules (served by `server.js` under `/web/`):
   - `main.js` — entry point: wires the `/api/events` SSE stream to the renderers, owns the refresh countdown + live clock, and bootstraps every other module.
-  - `cards.js` — per-card HTML renderers (RTK, Caveman, Cursor, Antigravity, Claude, Headroom, hero).
+  - `cards.js` — small public facade for per-card renderers. Card implementation is split by family: `cards-core.js` (RTK/Caveman/hero), `cards-common.js` (shared model/user/progress helpers), `cards-cursor.js`, `cards-antigravity.js`, `cards-claude.js`, `cards-headroom.js`, and `cards-version.js`. Keep `cards.js` under 500 lines and add new card behavior to the relevant module rather than growing the facade.
   - `charts.js` — the RTK daily bar chart and history trend lines (**Chart.js**, loaded from a CDN).
   - `pricing.js` — the client `PRICING` matrix and per-model cost/weight math.
   - `format.js` — pure formatting helpers (token/USD/time formatting).
