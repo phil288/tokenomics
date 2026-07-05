@@ -168,6 +168,7 @@ The application is structured as a **single-file backend** (`server.js`) and a *
   - Records compact snapshots of historical data to `data/history.jsonl` every minute (`HISTORY_INTERVAL_MS`, default: `60000`), capped at `HISTORY_MAX` (default: `5000`) entries.
   - Serves a family of **on-demand deep-analysis endpoints** under `/api/analysis/*` (§7). These are **not** part of the 10 s SSE loop — they run only when the browser's Analysis tab fetches them, because they read SQLite row-by-row and tail multi-MB logs.
 - **`src/analysis.js`** (CommonJS): all `/api/analysis/*` aggregations. Event-shaped — reads the tools' own ledgers (RTK SQLite, caveman JSONL, Headroom savings history + log tails) and filters to the baseline cut (§6). Requires `collectors.js` (shared helpers: `rtkDataHomes`, `tailFileSync`, `cavemanHistoryPath`, headroom path resolvers, `parseProxyPerfLine`/`parseSessionStatLine`) and `baseline.js` (`getBaseline`) — no require cycle.
+- **Collector modules**: `src/collectors.js` is the small public facade/orchestrator. Tool-specific logic lives in `collectors-rtk.js`, `collectors-caveman.js`, `collectors-headroom.js`, `collectors-cursor.js`, `collectors-antigravity.js`, and `collectors-activity.js`; shared home/path/I/O helpers live in `collector-utils.js`. Keep `collectors.js` under 500 lines and add new collector behavior to the relevant tool module rather than growing the facade.
 - **`index.html`**:
   - The HTML layout structure. Links to `/index.css` and loads `/web/main.js` as an ES module.
 - **`index.css`**:

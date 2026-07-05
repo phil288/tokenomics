@@ -65,6 +65,7 @@ test('TOKENOMICS_HOMES aggregates Caveman and Headroom state across homes', asyn
     if (oldDataDir === undefined) delete process.env.TOKENOMICS_DATA_DIR;
     else process.env.TOKENOMICS_DATA_DIR = oldDataDir;
     fs.rmSync(root, { recursive: true, force: true });
+    assert.equal(fs.existsSync(root), false);
   }
 });
 
