@@ -18,6 +18,10 @@ function configuredHomes() {
   return homes.length ? homes : [HOME];
 }
 
+function userLabel(home) {
+  return path.basename(home) || home;
+}
+
 const EXEC_PATH = [
   path.join(HOME, '.local', 'bin'),
   path.join(HOME, 'bin'),
@@ -67,6 +71,21 @@ function rtkDataHomes() {
     try {
       const real = fs.realpathSync(path.join(share, 'rtk', 'history.db'));
       if (!seen.has(real)) { seen.add(real); homes.push(share); }
+    } catch { }
+  }
+  return homes;
+}
+
+function rtkDataHomesFor(home) {
+  const candidates = [
+    path.join(home, '.local', 'share'),
+    path.join(home, 'Library', 'Application Support'),
+  ];
+  const homes = [];
+  for (const share of candidates) {
+    try {
+      fs.realpathSync(path.join(share, 'rtk', 'history.db'));
+      homes.push(share);
     } catch { }
   }
   return homes;
@@ -255,11 +274,91 @@ async function collectRTK() {
   return { ...base, install };
 }
 
+async function collectRTKForHome(home) {
+  const homes = rtkDataHomesFor(home);
+  const envs = homes.length ? [{ HOME: home }] : [];
+  const results = await Promise.all(
+    envs.map(env => execPromise('rtk gain -g -a', env).then(o => {
+      if (!o) return null;
+      try {
+        return JSON.parse(o);
+      } catch {
+        return parseTextRTK(o);
+      }
+    }))
+  ).then(r => r.filter(Boolean));
+  return results.length
+    ? (results.length === 1 ? results[0] : mergeRTK(results))
+    : { error: 'no data' };
+}
+
 // Caveman's session ledger. Overridable (settings/env) so tests can point it at
 // a temp fixture, mirroring HEADROOM_SESSION_STATS_PATH.
 function cavemanHistoryPath(home = HOME) {
   return settings.CAVEMAN_HISTORY_PATH || process.env.CAVEMAN_HISTORY_PATH
     || path.join(home, '.claude', '.caveman-history.jsonl');
+}
+
+function cavemanConfigMode(home) {
+  if (process.env.CAVEMAN_DEFAULT_MODE) return process.env.CAVEMAN_DEFAULT_MODE.trim();
+  const cfg = path.join(home, '.config', 'caveman', 'config.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cfg, 'utf8'));
+    return String(parsed.defaultMode || parsed.default_mode || '').trim();
+  } catch { return ''; }
+}
+
+function cavemanInstalled(home) {
+  return [
+    path.join(home, '.agents', 'skills', 'caveman', 'SKILL.md'),
+    path.join(home, '.roo', 'skills', 'caveman', 'SKILL.md'),
+  ].some(p => {
+    try { return fs.existsSync(p); } catch { return false; }
+  });
+}
+
+async function collectCavemanForHome(home) {
+  const statusPath = path.join(home, '.claude', '.caveman-statusline-suffix');
+  const [modeRaw, historyRaw, statusRaw] = await Promise.all([
+    readFile(path.join(home, '.claude', '.caveman-active')),
+    readFile(cavemanHistoryPath(home)),
+    readFile(statusPath),
+  ]);
+  const installed = cavemanInstalled(home);
+  const cfgMode = cavemanConfigMode(home);
+  let mode = (modeRaw || '').trim();
+  const source = mode ? 'ledger' : installed ? 'install' : 'missing';
+  if (!mode && installed) mode = cfgMode || 'full';
+  if (!mode) mode = 'unknown';
+  const active = /^(full|lite|ultra|wenyan|wenyan-lite|wenyan-ultra)$/i.test(mode) && mode !== 'off';
+
+  const latest = new Map();
+  if (historyRaw) {
+    for (const line of historyRaw.split('\n').filter(l => l.trim())) {
+      try {
+        const e = JSON.parse(line);
+        const key = e.session_id || `_${latest.size}`;
+        const prev = latest.get(key);
+        if (!prev || (e.ts || 0) >= (prev.ts || 0)) latest.set(key, e);
+      } catch { }
+    }
+  }
+  const sessions = [...latest.values()];
+  let totalOutputTokens = 0, totalSavedTokens = 0, totalSavedUsd = 0;
+  for (const e of sessions) {
+    totalOutputTokens += e.output_tokens || 0;
+    totalSavedTokens += e.est_saved_tokens || 0;
+    totalSavedUsd += e.est_saved_usd || 0;
+  }
+  return {
+    installed, active, mode, source,
+    session_count: sessions.length,
+    total_output_tokens: totalOutputTokens,
+    total_saved_tokens: totalSavedTokens,
+    total_saved_usd: totalSavedUsd,
+    statusline_saved_tokens: parseCompactTokenCount(statusRaw),
+    statusline_updated_at: fileMtimeISO(statusPath),
+  };
 }
 
 async function collectCaveman() {
@@ -268,20 +367,19 @@ async function collectCaveman() {
   let mode = 'unknown';
   let statuslineSavedTokens = 0;
   let statuslineUpdatedAt = null;
+  let anyInstalled = false;
+  let anyActive = false;
 
   for (const home of homes) {
-    const statusPath = path.join(home, '.claude', '.caveman-statusline-suffix');
-    const [modeRaw, historyRaw, statusRaw] = await Promise.all([
-      readFile(path.join(home, '.claude', '.caveman-active')),
-      readFile(cavemanHistoryPath(home)),
-      readFile(statusPath),
-    ]);
-
-    const homeMode = (modeRaw || '').trim();
+    const homeCaveman = await collectCavemanForHome(home);
+    anyInstalled = anyInstalled || homeCaveman.installed;
+    anyActive = anyActive || homeCaveman.active;
+    const homeMode = homeCaveman.mode;
     if (homeMode && homeMode !== 'unknown') mode = homeMode;
-    statuslineSavedTokens += parseCompactTokenCount(statusRaw);
-    statuslineUpdatedAt = maxIso(statuslineUpdatedAt, fileMtimeISO(statusPath));
+    statuslineSavedTokens += homeCaveman.statusline_saved_tokens || 0;
+    statuslineUpdatedAt = maxIso(statuslineUpdatedAt, homeCaveman.statusline_updated_at);
 
+    const historyRaw = await readFile(cavemanHistoryPath(home));
     if (!historyRaw) continue;
     for (const line of historyRaw.split('\n').filter(l => l.trim())) {
       try {
@@ -302,6 +400,8 @@ async function collectCaveman() {
   }
 
   return {
+    installed: anyInstalled,
+    active: anyActive,
     mode, session_count: sessions.length, total_output_tokens: totalOutputTokens,
     total_saved_tokens: totalSavedTokens, total_saved_usd: totalSavedUsd, sessions,
     statusline_saved_tokens: statuslineSavedTokens,
@@ -335,6 +435,23 @@ function headroomSubPath(home = HOME) {
 function headroomSavingsPath(home = HOME) {
   return settings.HEADROOM_SAVINGS_PATH || process.env.HEADROOM_SAVINGS_PATH
     || path.join(home, '.headroom', 'proxy_savings.json');
+}
+
+async function collectHeadroomForHome(home) {
+  const parse = (raw) => { if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } };
+  const [subRaw, savRaw] = await Promise.all([
+    readFile(headroomSubPath(home)),
+    readFile(headroomSavingsPath(home)),
+  ]);
+  const sub = parse(subRaw);
+  const sav = parse(savRaw);
+  return {
+    latest: sub && sub.latest || null,
+    last_active_at: sub && sub.last_active_at || null,
+    window_tokens: sub && sub.window_tokens || null,
+    savings: sav && sav.lifetime ? { lifetime: sav.lifetime } : null,
+    has_state: Boolean(sub || sav),
+  };
 }
 
 function headroomHealthUrl() {
@@ -713,6 +830,33 @@ async function collectLastUsed(headroom) {
   return { rtk: maxRtkLastUsed(), caveman, claude, headroom: headroomLastUsed(headroom) };
 }
 
+async function collectUsers() {
+  return Promise.all(configuredHomes().map(async home => {
+    const [rtk, caveman, headroom] = await Promise.all([
+      collectRTKForHome(home),
+      collectCavemanForHome(home),
+      collectHeadroomForHome(home),
+    ]);
+    return {
+      user: userLabel(home),
+      home,
+      rtk: rtk.summary || null,
+      caveman,
+      claude: {
+        latest: headroom.latest,
+        has_quota: Boolean(headroom.latest),
+        headroom_state: headroom.has_state,
+        last_active_at: headroom.last_active_at,
+      },
+      headroom: {
+        tokens_saved: headroom.savings && headroom.savings.lifetime
+          ? (headroom.savings.lifetime.tokens_saved || 0)
+          : 0,
+      },
+    };
+  }));
+}
+
 // ---- Activity feed: per-operation before→after token records ----
 // Three sources expose granular per-op token data. NB: no tool persists the
 // actual prompt/response TEXT — only token counts + labels:
@@ -1034,9 +1178,12 @@ async function collectActivity({ limit = 50 } = {}) {
 // Absolute, un-offset stats — every collector at its raw all-time value. Use
 // this when you need the true totals (e.g. capturing a reset baseline).
 async function collectStatsRaw() {
-  const [rtk, caveman, headroom, cursor] = await Promise.all([
-    collectRTK(), collectCaveman(), collectHeadroom(), collectCursor()
+  const [rtk, caveman, headroom, cursor, users] = await Promise.all([
+    collectRTK(), collectCaveman(), collectHeadroom(), collectCursor(), collectUsers()
   ]);
+  if (rtk && typeof rtk === 'object') rtk.users = users;
+  if (caveman && typeof caveman === 'object') caveman.users = users;
+  if (headroom && typeof headroom === 'object') headroom.users = users;
   const lastUsed = await collectLastUsed(headroom);
   const visibility = {
     rtk: settings.RTK_ENABLED !== false,
@@ -1047,7 +1194,7 @@ async function collectStatsRaw() {
     antigravity: settings.ANTIGRAVITY_ENABLED !== false,
   };
   return {
-    rtk, caveman, headroom, cursor, antigravity: antigravityCache,
+    rtk, caveman, headroom, cursor, antigravity: antigravityCache, users,
     visibility, last_used: lastUsed, version: collectVersion(),
     timestamp: new Date().toISOString(), refresh_ms: REFRESH_MS,
   };
@@ -1085,4 +1232,5 @@ module.exports = {
   headroomSessionStatsPath,
   headroomProxyLogPath,
   configuredHomes,
+  collectUsers,
 };

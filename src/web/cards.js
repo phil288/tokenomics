@@ -83,6 +83,7 @@ export function renderRTK(d, lastUsed) {
       <div class="row"><span class="row-label">Avg savings</span><span class="row-val" style="color:var(--rtk)">${pct(s.avg_savings_pct)}</span></div>
       <div class="row"><span class="row-label">Avg exec time</span><span class="row-val">${s.avg_time_ms || 0} ms</span></div>
       ${lastUsedRow(lastUsed)}
+      ${userBreakdown(d.users || [], 'rtk')}
     </div>
   `;
 }
@@ -103,11 +104,28 @@ function cavemanStatusPill(mode) {
   return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}Caveman inactive</div>`;
 }
 
+function cavemanPill(d) {
+  if (!d) return cavemanStatusPill('unknown');
+  const mode = d.mode || 'unknown';
+  if (d.active || /^(full|lite|ultra|wenyan|wenyan-lite|wenyan-ultra)$/i.test(mode)) {
+    const col = MODE_COLORS[mode] || 'var(--success, #3fb950)';
+    const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
+    const sub = `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">${mode}</span>`;
+    const label = d.source === 'install' ? 'Caveman installed' : 'Caveman active';
+    return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}${label}${sub}</div>`;
+  }
+  if (d.installed) {
+    const col = 'var(--warn, #d29922)';
+    const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
+    return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}Caveman installed · off</div>`;
+  }
+  return cavemanStatusPill(mode);
+}
+
 export function renderCav(d, lastUsed) {
   if (!d) return '<div class="err">No Caveman data</div>';
-  const mode = d.mode || 'unknown';
   return `
-    ${cavemanStatusPill(mode)}
+    ${cavemanPill(d)}
     <div class="big" style="color:var(--caveman)">${ht(d.total_saved_tokens || 0)}</div>
     <div class="big-label">est. tokens saved</div>
     <div class="rows">
@@ -115,6 +133,7 @@ export function renderCav(d, lastUsed) {
       <div class="row"><span class="row-label">Output tokens</span><span class="row-val">${ht(d.total_output_tokens || 0)}</span></div>
       <div class="row"><span class="row-label">Est. USD saved</span><span class="row-val" style="color:var(--caveman)">${usd(d.total_saved_usd || 0)}</span></div>
       ${lastUsedRow(lastUsed)}
+      ${userBreakdown(d.users || [], 'caveman')}
     </div>
   `;
 }
@@ -369,12 +388,23 @@ export function renderClaude(d) {
     .sort((a, b) => a.label.localeCompare(b.label));
   const have = (fh.utilization_pct != null) || (sd.utilization_pct != null)
     || modelWindows.some(m => m.win.utilization_pct != null);
-  if (!have) return '<div class="err">Claude quota unavailable (Headroom hasn\'t polled yet)</div>';
+  if (!have) {
+    const online = d.health && d.health.ok;
+    const msg = online
+      ? 'Claude connected via Headroom; quota poll pending'
+      : 'Claude quota unavailable (Headroom not reachable)';
+    return `
+      ${headroomHealthPill(d.health)}
+      <div class="${online ? 'note' : 'err'}">${msg}</div>
+      <div class="rows">${userBreakdown(d.users || [], 'claude')}</div>
+    `;
+  }
   const sessionSecs = sessionResetSecs(fh);
   return `
     ${quotaBar('Current session (5h)', fh.utilization_pct, sessionSecs, remainingTime(sessionSecs))}
     ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, quotaResetSecs(sd))}
     ${modelWindows.map(m => quotaBar(`Weekly · ${m.label} (7d)`, m.win.utilization_pct, quotaResetSecs(m.win))).join('')}
+    <div class="rows">${userBreakdown(d.users || [], 'claude')}</div>
   `;
 }
 
@@ -523,5 +553,38 @@ export function renderHero(stats) {
     </div>
     <div class="chip" style="border-left-color:var(--headroom)">
       <span class="chip-label">Headroom</span><span class="chip-val" style="color:var(--headroom)">${ht(hdrSaved)}</span>${sub(lu.headroom)}
+    </div>
+    ${heroUsers(stats.users || [])}`;
+}
+
+function userBreakdown(users, kind) {
+  if (!users || !users.length) return '';
+  const rows = users.map(u => {
+    let value = '';
+    if (kind === 'rtk') {
+      const r = u.rtk || {};
+      value = `${ht(r.total_saved || 0)} saved`;
+    } else if (kind === 'caveman') {
+      const c = u.caveman || {};
+      const status = c.active ? (c.mode || 'active') : c.installed ? 'installed' : 'not installed';
+      value = `${status} · ${ht(c.total_saved_tokens || 0)} saved`;
+    } else if (kind === 'claude') {
+      const c = u.claude || {};
+      value = c.has_quota ? 'quota polled' : c.headroom_state ? 'state only' : 'no state';
+    }
+    return `<div class="row"><span class="row-label">${ht(u.user || 'user')}</span><span class="row-val">${ht(value)}</span></div>`;
+  }).join('');
+  return `<div class="divider"></div><div class="tcell-label" style="margin-bottom:6px">Per user</div>${rows}`;
+}
+
+function heroUsers(users) {
+  if (!users || users.length < 2) return '';
+  return users.map(u => {
+    const rtk = u.rtk ? (u.rtk.total_saved || 0) : 0;
+    const cav = u.caveman ? (u.caveman.total_saved_tokens || 0) : 0;
+    const hr = u.headroom ? (u.headroom.tokens_saved || 0) : 0;
+    return `<div class="chip" style="border-left-color:var(--muted)">
+      <span class="chip-label">${ht(u.user)}</span><span class="chip-val">${ht(rtk + cav + hr)}</span>
     </div>`;
+  }).join('');
 }
