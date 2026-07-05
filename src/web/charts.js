@@ -84,7 +84,7 @@ function filterHist() {
   return histData.filter(r => r.t >= cutoff);
 }
 
-const hcBase = (extra) => ({
+export const hcBase = (extra) => ({
   type: 'line',
   options: {
     responsive: true, maintainAspectRatio: false,
@@ -108,7 +108,7 @@ const hcBase = (extra) => ({
   },
 });
 
-function drawLine(id, labels, datasets, yfmt, tipfmt, y1fmt) {
+export function drawLine(id, labels, datasets, yfmt, tipfmt, y1fmt) {
   const cv = document.getElementById(id);
   if (!cv) return;
   if (histCharts[id]) {
@@ -169,6 +169,13 @@ export function initHistoryControls() {
   });
 }
 
+// Other modules (analysis.js) own charts on canvases outside this file's
+// registry. They register a redraw callback here so a theme flip rebuilds them
+// too, instead of leaving stale axis/grid colors. Avoids a charts↔analysis
+// import cycle — charts.js never imports the consumer.
+const redrawHooks = [];
+export function registerRedraw(fn) { if (typeof fn === 'function') redrawHooks.push(fn); }
+
 // Tear down every chart and rebuild from the last snapshot — used on theme flips
 // so axis/grid/label colors repaint against the new CSS variables.
 export function redrawAllCharts() {
@@ -178,4 +185,5 @@ export function redrawAllCharts() {
   const ls = state.lastStats;
   if (ls && ls.rtk && (ls.rtk.daily || []).length) drawRTKChart(ls.rtk.daily);
   renderHistory();
+  for (const fn of redrawHooks) { try { fn(); } catch (e) { console.error(e); } }
 }

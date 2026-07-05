@@ -9,6 +9,7 @@ import { rtkInstallPill, headroomHealthPill } from './cards.js';
 
 const SOURCE_META = {
   'rtk': { name: 'RTK', color: 'var(--rtk)' },
+  'caveman': { name: 'Caveman', color: 'var(--caveman)' },
   'headroom-compress': { name: 'Headroom · compress', color: 'var(--headroom)' },
   'headroom-proxy': { name: 'Headroom · proxy', color: 'var(--headroom)' },
 };
@@ -16,11 +17,13 @@ const SOURCE_META = {
 const FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'rtk', label: 'RTK' },
+  { key: 'caveman', label: 'Caveman' },
   { key: 'headroom', label: 'Headroom' },
 ];
 
 function matchFilter(row, f) {
   if (f === 'rtk') return row.source === 'rtk';
+  if (f === 'caveman') return row.source === 'caveman';
   if (f === 'headroom') return String(row.source).startsWith('headroom');
   return true; // 'all'
 }
@@ -237,6 +240,9 @@ function activateView(view) {
   for (const t of tabs.querySelectorAll('.dash-tab')) t.classList.toggle('active', t === btn);
   for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.dataset.view === view);
   if (view === 'activity') fetchActivity();
+  // Broadcast so lazily-loaded views (Analysis) can fetch on open without this
+  // module importing them.
+  window.dispatchEvent(new CustomEvent('viewchange', { detail: { view } }));
 }
 
 // Top-level dashboard tabs (Overview / Activity). The active tab is reflected in

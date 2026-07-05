@@ -5,7 +5,20 @@ const { getSettings, updateSettings } = require('./src/settings');
 const { collectStats, collectStatsRaw, pollAntigravity, collectActivity, collectRtkTotals } = require('./src/collectors');
 const { history, recordSnapshot, clearHistory } = require('./src/history');
 const { captureBaseline, clearBaseline, applyActivityBaseline } = require('./src/baseline');
+const analysis = require('./src/analysis');
 const { pollVersion } = require('./src/version');
+
+// On-demand deep-analysis routes (never in the SSE loop). Each handler gets the
+// parsed query params and returns a JSON-serializable payload; baseline
+// filtering happens inside src/analysis.js.
+const ANALYSIS_ROUTES = {
+  'rtk/projects': () => analysis.rtkProjects(),
+  'rtk/losses': (q) => analysis.rtkLosses({ limit: q.get('limit') }),
+  'rtk/commands': () => analysis.rtkCommandTypes(),
+  'caveman': (q) => analysis.cavemanAnalysis({ series: q.get('series') }),
+  'headroom/models': (q) => analysis.headroomModels({ points: q.get('points') }),
+  'headroom/ops': (q) => analysis.headroomOps({ bytes: q.get('bytes') }),
+};
 
 const PORT = Number(process.env.PORT) || 3000;
 const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
@@ -108,6 +121,24 @@ const server = http.createServer(async (req, res) => {
     const payload = applyActivityBaseline({ rows, rtk });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(payload));
+  } else if (pathname.startsWith('/api/analysis/') && req.method === 'GET') {
+    // Deep-analysis drill-downs. On-demand only — the Analysis view fetches
+    // these when visible; nothing here runs on the 10s SSE loop.
+    const handler = ANALYSIS_ROUTES[pathname.slice('/api/analysis/'.length)];
+    if (!handler) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unknown analysis endpoint' }));
+      return;
+    }
+    try {
+      const q = new URL(req.url, 'http://localhost').searchParams;
+      const payload = handler(q);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(payload));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
   } else if (pathname === '/api/history/reset' && req.method === 'POST') {
     // Reset all stats: wipe the recorded trend history AND capture the current
     // absolute tool totals as a baseline. From now on every reading is shown

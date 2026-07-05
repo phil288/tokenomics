@@ -43,7 +43,10 @@ let settings = {
   HEADROOM_HEALTH_URL: 'http://127.0.0.1:8787/health',
   PRICING: DEFAULT_PRICING,
   // Free-drag card layout: { "<card-id>": { x, y, w } } in px. Empty = native grid.
-  CARD_LAYOUT: {}
+  CARD_LAYOUT: {},
+  // Analysis view panel order: { "<section>": ["<blockKey>", …] } per section
+  // (rtk/cav/hr). Empty = the HTML's native block order.
+  ANALYSIS_LAYOUT: {}
 };
 
 function loadSettings() {
@@ -102,6 +105,9 @@ function updateSettings(parsed) {
   }
   if (parsed.CARD_LAYOUT && typeof parsed.CARD_LAYOUT === 'object') {
     settings.CARD_LAYOUT = parsed.CARD_LAYOUT;
+  }
+  if (parsed.ANALYSIS_LAYOUT && typeof parsed.ANALYSIS_LAYOUT === 'object') {
+    settings.ANALYSIS_LAYOUT = parsed.ANALYSIS_LAYOUT;
   }
   saveSettings();
   return getSettings();

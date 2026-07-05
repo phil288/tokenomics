@@ -261,3 +261,43 @@ test('unknown routes return 404', async () => {
   const res = await fetch(base + '/totally/unknown');
   assert.equal(res.status, 404);
 });
+
+// ---- Analysis view: on-demand /api/analysis/* endpoints ----
+
+test('GET /api/analysis/* routes return 200 JSON with their documented top-level keys', async () => {
+  const cases = [
+    ['rtk/projects', ['projects', 'since']],
+    ['rtk/losses?limit=5', ['rows', 'total_loss_rows', 'since']],
+    ['rtk/commands', ['types', 'since']],
+    ['caveman?series=3', ['sessions', 'by_model', 'by_mode', 'series', 'since']],
+    ['headroom/models?points=50', ['models', 'total_points_raw', 'since']],
+    ['headroom/ops?bytes=65536', ['strategies', 'transforms', 'clients', 'cache_trend', 'window_bytes', 'window_partial']],
+  ];
+  for (const [sub, keys] of cases) {
+    const res = await fetch(`${base}/api/analysis/${sub}`);
+    assert.equal(res.status, 200, `${sub} should be 200`);
+    const body = await res.json();
+    for (const k of keys) assert.ok(k in body, `${sub} missing key ${k}`);
+  }
+});
+
+test('unknown /api/analysis subpath returns 404', async () => {
+  const res = await fetch(base + '/api/analysis/nope');
+  assert.equal(res.status, 404);
+});
+
+test('/api/analysis/headroom/ops clamps the byte window', async () => {
+  const lo = await (await fetch(base + '/api/analysis/headroom/ops?bytes=10')).json();
+  assert.equal(lo.window_bytes, 65536);
+  const hi = await (await fetch(base + '/api/analysis/headroom/ops?bytes=99999999')).json();
+  assert.equal(hi.window_bytes, 8388608);
+});
+
+test('Phase 0: /api/stats headroom.savings carries no history/projects (stripped from SSE payload)', async () => {
+  const s = await (await fetch(base + '/api/stats')).json();
+  const savings = s.headroom && s.headroom.savings;
+  if (savings) {
+    assert.equal('history' in savings, false, 'history must be stripped');
+    assert.equal('projects' in savings, false, 'projects must be stripped');
+  }
+});

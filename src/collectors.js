@@ -242,11 +242,18 @@ async function collectRTK() {
   return { ...base, install };
 }
 
+// Caveman's session ledger. Overridable (settings/env) so tests can point it at
+// a temp fixture, mirroring HEADROOM_SESSION_STATS_PATH.
+function cavemanHistoryPath() {
+  return settings.CAVEMAN_HISTORY_PATH || process.env.CAVEMAN_HISTORY_PATH
+    || path.join(HOME, '.claude', '.caveman-history.jsonl');
+}
+
 async function collectCaveman() {
   const statusPath = path.join(HOME, '.claude', '.caveman-statusline-suffix');
   const [modeRaw, historyRaw, statusRaw] = await Promise.all([
     readFile(path.join(HOME, '.claude', '.caveman-active')),
-    readFile(path.join(HOME, '.claude', '.caveman-history.jsonl')),
+    readFile(cavemanHistoryPath()),
     readFile(statusPath),
   ]);
 
@@ -303,10 +310,12 @@ function parseCompactTokenCount(raw) {
 // We read both and return the subscription object (so the Claude quota card +
 // telemetry keep working) with the savings ledger attached as `.savings`.
 function headroomSubPath() {
-  return settings.HEADROOM_SUBSCRIPTION_STATE_PATH || path.join(HOME, '.headroom', 'subscription_state.json');
+  return settings.HEADROOM_SUBSCRIPTION_STATE_PATH || process.env.HEADROOM_SUBSCRIPTION_STATE_PATH
+    || path.join(HOME, '.headroom', 'subscription_state.json');
 }
 function headroomSavingsPath() {
-  return settings.HEADROOM_SAVINGS_PATH || path.join(HOME, '.headroom', 'proxy_savings.json');
+  return settings.HEADROOM_SAVINGS_PATH || process.env.HEADROOM_SAVINGS_PATH
+    || path.join(HOME, '.headroom', 'proxy_savings.json');
 }
 
 function headroomHealthUrl() {
@@ -358,7 +367,15 @@ async function collectHeadroom() {
   ]);
   const parse = (raw) => { if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } };
   const sub = parse(subRaw);
-  const savings = parse(savRaw);
+  let savings = parse(savRaw);
+  // proxy_savings.json also carries a large per-model `history[]` (5000-cap
+  // snapshots, ~MBs) and a `projects` map. Nothing in the stats pipeline reads
+  // them, and this object rides every 10s SSE frame — strip them here. The
+  // history is served on demand via /api/analysis/headroom/models instead.
+  if (savings) {
+    const { history, projects, ...lean } = savings;
+    savings = lean;
+  }
   const base = sub || { error: 'no data' };
   // Headroom's raw window counters reset when the proxy restarts or a quota
   // window rolls. Display the persisted local accumulator instead so the
@@ -587,7 +604,7 @@ function headroomLastUsed(headroom) {
 // session. The .caveman-active / statusline files are touched live, so take the
 // most recent signal across all three.
 async function cavemanLastUsed() {
-  const histTs = await maxJsonlLastUsed(path.join(HOME, '.claude', '.caveman-history.jsonl'), 'ts');
+  const histTs = await maxJsonlLastUsed(cavemanHistoryPath(), 'ts');
   return maxIso(
     histTs,
     fileMtimeISO(path.join(HOME, '.claude', '.caveman-active')),
@@ -806,6 +823,36 @@ async function collectActivity({ limit = 50 } = {}) {
     });
   }
 
+  // Caveman — one row per JSONL event line (a per-session time series written
+  // as the session progresses; the file is tiny, so a full read is fine).
+  // before = what the session would have cost without compression (output +
+  // estimated saved), after = actual output tokens.
+  const cavRaw = await readFile(cavemanHistoryPath());
+  const cavEvents = [];
+  for (const line of cavRaw ? cavRaw.split('\n') : []) {
+    const s = line.trim();
+    if (!s) continue;
+    let e; try { e = JSON.parse(s); } catch { continue; }
+    const after = Number(e.output_tokens) || 0;
+    const saved = Number(e.est_saved_tokens) || 0;
+    const before = after + saved;
+    const info = [];
+    if (e.mode) info.push(['mode', String(e.mode)]);
+    if (e.model) info.push(['model', String(e.model)]);
+    if (e.session_id) info.push(['session', String(e.session_id).slice(0, 8)]);
+    if (typeof e.est_saved_usd === 'number') info.push(['est saved', '$' + e.est_saved_usd.toFixed(4)]);
+    cavEvents.push({
+      source: 'caveman',
+      ts: typeof e.ts === 'number' ? e.ts : null,
+      label: truncLabel(`${e.mode || 'caveman'} · ${e.model || 'session'}`),
+      detail: null,
+      before, after, saved,
+      pct: before ? (saved / before) * 100 : 0,
+      info,
+    });
+  }
+  for (const e of cavEvents.slice(-limit)) out.push(e);
+
   // Headroom MCP compress events (tail of session_stats.jsonl)
   const statRaw = tailFileSync(headroomSessionStatsPath());
   const compressEvents = [];
@@ -934,4 +981,12 @@ module.exports = {
   collectRtkTotals,
   parseProxyPerfLine,
   parseSessionStatLine,
+  // shared helpers for src/analysis.js (on-demand /api/analysis/* aggregations)
+  rtkDataHomes,
+  tailFileSync,
+  clampLimit,
+  cavemanHistoryPath,
+  headroomSavingsPath,
+  headroomSessionStatsPath,
+  headroomProxyLogPath,
 };

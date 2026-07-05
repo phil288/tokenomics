@@ -39,6 +39,7 @@
   <nav class="dash-tabs" id="dash-tabs" role="tablist" aria-label="Dashboards">
     <button class="dash-tab active" data-view="overview" role="tab">Overview</button>
     <button class="dash-tab" data-view="activity" role="tab">Activity</button>
+    <button class="dash-tab" data-view="analysis" role="tab">Analysis</button>
   </nav>
 
   <!-- Overview view: hero + all source cards -->
@@ -140,6 +141,115 @@
       <div class="act-note">No tool stores the raw prompt/response text (Headroom proxies it passthrough), so the exact query content can't be shown. Each row is one operation at one instant. For Headroom proxy rows the bold figure is the <b>fresh tokens processed that turn</b> — each request resends the whole conversation as context, but the cached prefix is served for free, so only the non-cached remainder is real per-instant usage. Detail (context resent, fresh processed, cache hit %, request size/id) shows under each row — click a row to collapse or reopen it. Sources: RTK commands, Headroom compressions, Headroom proxied requests.</div>
       <div id="activity"><span class="loading">…</span></div>
     </div>
+  </div>
+
+  <!-- Analysis view: on-demand deep drill-downs (fetched only while visible) -->
+  <div class="view" id="view-analysis" data-view="analysis">
+
+    <div class="card an-card" id="an-rtk-card">
+      <div class="card-header">
+        <span class="card-title">RTK deep analysis <span class="card-sub" id="an-rtk-since"></span></span>
+        <div class="accent" style="background:var(--rtk)"></div>
+      </div>
+      <div class="an-grid">
+        <div class="an-block" id="anb-rtk-period">
+          <div class="an-block-head" id="anb-rtk-pct">
+            <span class="an-block-title">Saved per period</span>
+            <div class="an-toggle" id="an-rtk-period-toggle">
+              <button class="an-tgl active" data-period="daily">daily</button>
+              <button class="an-tgl" data-period="weekly">weekly</button>
+              <button class="an-tgl" data-period="monthly">monthly</button>
+            </div>
+          </div>
+          <div class="an-chart"><canvas id="an-rtk-period"></canvas></div>
+        </div>
+        <div class="an-block" id="anb-rtk-exec">
+          <div class="an-block-head" id="anb-rtk-projects"><span class="an-block-title">Savings % per day</span></div>
+          <div class="an-chart"><canvas id="an-rtk-pct"></canvas></div>
+        </div>
+        <div class="an-block" id="anb-rtk-types">
+          <div class="an-block-head" id="anb-rtk-losses"><span class="an-block-title">Avg exec time per day</span></div>
+          <div class="an-chart"><canvas id="an-rtk-exec"></canvas></div>
+        </div>
+        <div class="an-block" id="anb-cav-sessions">
+          <div class="an-block-head" id="anb-cav-models"><span class="an-block-title">Savings by project</span></div>
+          <div class="an-table-wrap" id="an-rtk-projects"><span class="loading">…</span></div>
+        </div>
+        <div class="an-block" id="anb-cav-modes">
+          <div class="an-block-head" id="anb-cav-growth"><span class="an-block-title">By command type</span></div>
+          <div class="an-table-wrap" id="an-rtk-types"><span class="loading">…</span></div>
+        </div>
+        <div class="an-block" id="anb-hr-spend">
+          <div class="an-block-head" id="anb-hr-models"><span class="an-block-title">Loss commands <span class="an-sub">rewrites that cost more than the original</span></span></div>
+          <div class="an-table-wrap" id="an-rtk-losses"><span class="loading">…</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card an-card" id="an-cav-card">
+      <div class="card-header">
+        <span class="card-title">Caveman deep analysis <span class="card-sub" id="an-cav-since"></span></span>
+        <div class="accent" style="background:var(--caveman)"></div>
+      </div>
+      <div class="an-grid">
+        <div class="an-block an-wide" id="anb-hr-quota">
+          <div class="an-block-head" id="anb-hr-cache"><span class="an-block-title">Sessions <span class="an-sub">ranked by estimated tokens saved</span></span></div>
+          <div class="an-table-wrap" id="an-cav-sessions"><span class="loading">…</span></div>
+        </div>
+        <div class="an-block" id="anb-hr-strategies">
+          <div class="an-block-head" id="anb-hr-transforms"><span class="an-block-title">Saved by model</span></div>
+          <div class="an-chart"><canvas id="an-cav-models"></canvas></div>
+        </div>
+        <div class="an-block">
+          <div class="an-block-head"><span class="an-block-title">Saved by mode</span></div>
+          <div class="an-chart"><canvas id="an-cav-modes"></canvas></div>
+        </div>
+        <div class="an-block an-wide">
+          <div class="an-block-head"><span class="an-block-title">Session growth <span class="an-sub">savings accumulating within recent sessions</span></span></div>
+          <div class="an-chart an-chart-tall"><canvas id="an-cav-growth"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card an-card" id="an-hr-card">
+      <div class="card-header">
+        <span class="card-title">Headroom deep analysis <span class="card-sub" id="an-hr-since"></span></span>
+        <div class="accent" style="background:var(--headroom)"></div>
+      </div>
+      <div class="an-grid">
+        <div class="an-block an-wide">
+          <div class="an-block-head"><span class="an-block-title">Savings vs spend <span class="an-sub">lifetime, from proxy_savings.json</span></span></div>
+          <div class="an-tiles" id="an-hr-spend"><span class="loading">…</span></div>
+        </div>
+        <div class="an-block an-wide">
+          <div class="an-block-head">
+            <span class="an-block-title">Savings by model over time <span class="an-sub">Headroom's native ledger history</span></span>
+            <div class="an-toggle" id="an-hr-unit-toggle">
+              <button class="an-tgl active" data-unit="tokens">tokens</button>
+              <button class="an-tgl" data-unit="usd">USD</button>
+            </div>
+          </div>
+          <div class="an-chart an-chart-tall"><canvas id="an-hr-models"></canvas></div>
+        </div>
+        <div class="an-block">
+          <div class="an-block-head"><span class="an-block-title">Quota utilization over time</span></div>
+          <div class="an-chart"><canvas id="an-hr-quota"></canvas></div>
+        </div>
+        <div class="an-block">
+          <div class="an-block-head"><span class="an-block-title">Cache hit % <span class="an-sub" id="an-hr-window-note"></span></span></div>
+          <div class="an-chart"><canvas id="an-hr-cache"></canvas></div>
+        </div>
+        <div class="an-block">
+          <div class="an-block-head"><span class="an-block-title">Compression by strategy</span></div>
+          <div class="an-table-wrap" id="an-hr-strategies"><span class="loading">…</span></div>
+        </div>
+        <div class="an-block">
+          <div class="an-block-head"><span class="an-block-title">Proxy transforms &amp; clients</span></div>
+          <div class="an-table-wrap" id="an-hr-transforms"><span class="loading">…</span></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Settings Modal Overlay -->

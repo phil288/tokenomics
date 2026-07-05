@@ -1,6 +1,6 @@
 // ============ SETTINGS MODAL & LOGIC ============
 import { PRICING } from './pricing.js';
-import { setCardLayout, hasSavedLayout, applyLayout } from './layout.js';
+import { setCardLayout, hasSavedLayout, applyLayout, setAnalysisLayout } from './layout.js';
 import { manualRefresh } from './main.js';
 import { fetchHistory } from './charts.js';
 
@@ -255,6 +255,13 @@ export async function initSettingsAndPricing() {
     setCardLayout(layout);
     // apply a saved layout immediately on load (wide viewports only)
     if (hasSavedLayout() && window.innerWidth > 1100) applyLayout();
+
+    // Analysis view panel order (source of truth: server, mirror: localStorage).
+    let anLayout = (config && config.ANALYSIS_LAYOUT) || {};
+    if (!Object.keys(anLayout).length) {
+      try { anLayout = JSON.parse(localStorage.getItem('ltm-analysis-layout') || '{}'); } catch { }
+    }
+    setAnalysisLayout(anLayout);
   } catch (err) {
     console.error('Failed to load dynamic pricing from settings:', err);
   }

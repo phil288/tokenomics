@@ -24,6 +24,10 @@
   --on-accent: #0d1117;
   --shadow: none;
   --hero-grad: linear-gradient(135deg, #161b22 0%, #1a2230 100%);
+  /* elevated inner-panel surface: sits clearly above --card, unlike the near-invisible --card-2 */
+  --surface-2: #1c2330;
+  --border-2: #3d4656;
+  --panel-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* ---- light theme ---- */
@@ -45,6 +49,9 @@
   --on-accent: #ffffff;
   --shadow: 0 1px 3px rgba(27, 31, 36, 0.08), 0 1px 2px rgba(27, 31, 36, 0.04);
   --hero-grad: linear-gradient(135deg, #ffffff 0%, #eef4ff 100%);
+  --surface-2: #ffffff;
+  --border-2: #d0d7de;
+  --panel-shadow: 0 1px 3px rgba(27, 31, 36, 0.10), 0 1px 2px rgba(27, 31, 36, 0.05);
 }
 
 /* ---- auto: follow OS when no explicit choice ---- */
@@ -66,6 +73,9 @@
     --on-accent: #ffffff;
     --shadow: 0 1px 3px rgba(27, 31, 36, 0.08), 0 1px 2px rgba(27, 31, 36, 0.04);
     --hero-grad: linear-gradient(135deg, #ffffff 0%, #eef4ff 100%);
+    --surface-2: #ffffff;
+    --border-2: #d0d7de;
+    --panel-shadow: 0 1px 3px rgba(27, 31, 36, 0.10), 0 1px 2px rgba(27, 31, 36, 0.05);
   }
 }
 
@@ -1674,3 +1684,169 @@ header h1 span {
   background: color-mix(in srgb, var(--rtk) 12%, var(--card));
 }
 .app-version.update::after { content: "●"; margin-left: 5px; font-size: 8px; }
+
+/* ============ Analysis view ============ */
+.an-card { margin-bottom: 18px; }
+.an-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+}
+.an-block {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  padding: 14px;
+  min-width: 0;
+  box-shadow: var(--panel-shadow);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.an-block:hover {
+  border-color: var(--rtk);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.an-wide { grid-column: 1 / -1; }
+
+/* ---- Free-drag arrange mode for analysis panels (mirrors .board) ---- */
+/* .arranged = panels positioned absolutely; .editing = live drag affordances,
+   both toggled by the shared Arrange (⇲) button in the header. */
+.an-grid.arranged {
+  display: block;
+  position: relative;
+}
+.an-grid.arranged .an-block {
+  position: absolute;
+  margin: 0;
+  overflow: auto;
+}
+.an-grid.editing .an-block {
+  outline: 2px dashed var(--accent, #d97757);
+  outline-offset: 3px;
+  cursor: grab;
+}
+.an-grid.editing .an-block:active { cursor: grabbing; }
+.an-grid.editing .an-block-head { cursor: grab; }
+.an-grid.arranged .an-block.dragging {
+  z-index: 50;
+  transition: none;
+  outline-color: var(--accent, #d97757);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+.an-grid.editing .resize-handle {
+  display: block;
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  border-right: 2px solid var(--accent, #d97757);
+  border-bottom: 2px solid var(--accent, #d97757);
+  border-bottom-right-radius: 9px;
+  opacity: 0.85;
+  z-index: 60;
+}
+.an-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.an-block-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--text);
+}
+.an-sub {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted);
+  opacity: 0.7;
+  margin-left: 4px;
+}
+.an-chart { position: relative; height: 200px; }
+.an-chart-tall { height: 300px; }
+/* vertical scroll only; reserve the scrollbar gutter so it never overlaps the
+   last column's text */
+.an-table-wrap {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+.an-empty { color: var(--muted); font-size: 12px; padding: 12px 2px; }
+
+/* fixed layout keeps the table inside its block (no horizontal scrollbar);
+   numeric columns get a tight fixed width, the first text column takes the rest */
+.an-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.an-table th.num, .an-table td.num { width: 60px; }
+.an-table th {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* every header is a click-to-sort control */
+.an-th {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.an-th:hover { color: var(--text); background: var(--card-2); }
+.an-th[aria-sort="ascending"], .an-th[aria-sort="descending"] { color: var(--text); }
+.an-th:focus-visible { outline: 2px solid var(--rtk); outline-offset: -2px; }
+.an-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--grid);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.an-table td.num, .an-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.an-table tbody tr:hover { background: var(--card-2); }
+
+.an-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+}
+.an-tile {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.an-tile-val { font-size: 20px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.an-tile-label { font-size: 11px; color: var(--muted); margin-top: 2px; letter-spacing: 0.3px; }
+
+.an-toggle { display: inline-flex; gap: 2px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+.an-tgl {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.an-tgl:hover { color: var(--text); }
+.an-tgl.active { background: var(--rtk); color: #fff; }

@@ -61,6 +61,12 @@ test('updateSettings stores a CARD_LAYOUT object, ignores non-objects', () => {
   assert.deepEqual(updateSettings({ CARD_LAYOUT: 'nope' }).CARD_LAYOUT, layout);
 });
 
+test('updateSettings stores an ANALYSIS_LAYOUT object, ignores non-objects', () => {
+  const layout = { rtk: ['an-rtk-projects', 'an-rtk-types'], hr: ['an-hr-models'] };
+  assert.deepEqual(updateSettings({ ANALYSIS_LAYOUT: layout }).ANALYSIS_LAYOUT, layout);
+  assert.deepEqual(updateSettings({ ANALYSIS_LAYOUT: 'nope' }).ANALYSIS_LAYOUT, layout);
+});
+
 test('updateSettings persists to disk', () => {
   updateSettings({ RTK_ENABLED: false, CURSOR_ACCESS_TOKEN: 'persisted' });
   const onDisk = readPersisted();

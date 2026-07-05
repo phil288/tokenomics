@@ -234,6 +234,95 @@ test('applyActivityBaseline clamps lifetime totals at zero', () => {
   clearBaseline();
 });
 
+// ---- Analysis-view extensions: weekly/monthly buckets + Headroom spend ----
+
+// Stats with weekly/monthly rollups + the spend denominator, placed on a fixed
+// reset day so the reset-period bucket is deterministic.
+function richStats(day = '2026-07-05') {
+  const wkStart = '2026-06-29', wkEnd = '2026-07-05', month = day.slice(0, 7);
+  return {
+    rtk: {
+      summary: { total_saved: 800_000, total_commands: 100, total_input: 1_000_000, total_output: 4_000 },
+      daily: [{ date: day, saved_tokens: 100, commands: 5, input_tokens: 100, output_tokens: 10, total_time_ms: 50 }],
+      weekly: [
+        { week_start: '2026-06-22', week_end: '2026-06-28', saved_tokens: 5, commands: 1, input_tokens: 5, output_tokens: 1, total_time_ms: 1 },
+        { week_start: wkStart, week_end: wkEnd, saved_tokens: 900, commands: 30, input_tokens: 1000, output_tokens: 100, total_time_ms: 300 },
+      ],
+      monthly: [
+        { month: '2026-06', saved_tokens: 7, commands: 2, input_tokens: 7, output_tokens: 2, total_time_ms: 2 },
+        { month, saved_tokens: 5000, commands: 80, input_tokens: 6000, output_tokens: 1000, total_time_ms: 800 },
+      ],
+    },
+    headroom: {
+      savings: {
+        lifetime: {
+          tokens_saved: 47_000_000, compression_savings_usd: 220.5, requests: 10_000,
+          total_input_tokens: 500_000_000, total_input_cost_usd: 1500,
+        },
+        display_session: { savings_percent: 17 },
+      },
+    },
+  };
+}
+
+test('snapshotTotals captures the reset-week/month buckets and Headroom spend denominator', () => {
+  const snap = snapshotTotals(richStats('2026-07-05'));
+  assert.equal(snap.rtk.week.week_start, '2026-06-29');
+  assert.equal(snap.rtk.week.saved_tokens, 900);
+  assert.equal(snap.rtk.month.month, '2026-07');
+  assert.equal(snap.rtk.month.saved_tokens, 5000);
+  assert.equal(snap.headroom.total_input_tokens, 500_000_000);
+  assert.equal(snap.headroom.total_input_cost_usd, 1500);
+});
+
+test('applyBaseline zeroes the reset-week/month bar and drops earlier periods', () => {
+  // Pin capture time to the reset day so new Date(b.t) lands on 2026-07-05.
+  captureBaseline(richStats('2026-07-05'));
+  const b = getBaseline();
+  b.t = Date.parse('2026-07-05T12:00:00Z'); // deterministic reset instant
+
+  const grown = richStats('2026-07-05');
+  grown.rtk.weekly[1].saved_tokens = 1400;   // +500 in the reset week
+  grown.rtk.weekly[1].input_tokens = 1500;
+  grown.rtk.monthly[1].saved_tokens = 5300;  // +300 in the reset month
+  grown.rtk.monthly[1].input_tokens = 6300;
+  const s = applyBaseline(grown);
+
+  assert.deepEqual(s.rtk.weekly.map(r => r.week_start), ['2026-06-29']); // pre-reset week dropped
+  assert.equal(s.rtk.weekly[0].saved_tokens, 500);                       // reset-week bar rebased
+  assert.deepEqual(s.rtk.monthly.map(r => r.month), ['2026-07']);
+  assert.equal(s.rtk.monthly[0].saved_tokens, 300);
+  clearBaseline();
+});
+
+test('applyBaseline offsets the Headroom spend denominator', () => {
+  captureBaseline(richStats());
+  const grown = richStats();
+  grown.headroom.savings.lifetime.total_input_tokens = 500_010_000; // +10k
+  grown.headroom.savings.lifetime.total_input_cost_usd = 1530;      // +30
+  const s = applyBaseline(grown);
+  assert.equal(s.headroom.savings.lifetime.total_input_tokens, 10_000);
+  assert.equal(s.headroom.savings.lifetime.total_input_cost_usd, 30);
+  clearBaseline();
+});
+
+test('an older baseline lacking week/month/spend fields still applies safely', () => {
+  // Simulate a baseline captured by a pre-Analysis build: no rtk.week/.month,
+  // no headroom.total_input_*. applyBaseline must not throw and must leave the
+  // new surfaces at their absolute (un-offset) values.
+  captureBaseline(richStats());
+  const b = getBaseline();
+  delete b.rtk.week; delete b.rtk.month;
+  delete b.headroom.total_input_tokens; delete b.headroom.total_input_cost_usd;
+
+  const s = applyBaseline(richStats());
+  // weekly/monthly still filtered by date but the reset-period bar keeps its
+  // absolute value (no bucket subtraction without a snapshot).
+  assert.ok(Array.isArray(s.rtk.weekly));
+  assert.equal(s.headroom.savings.lifetime.total_input_tokens, 500_000_000); // untouched
+  clearBaseline();
+});
+
 test('captureBaseline persists to disk and loadBaseline restores it', () => {
   captureBaseline(rawStats());
   assert.ok(fs.existsSync(BASELINE_FILE));

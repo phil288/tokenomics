@@ -8,6 +8,7 @@ import {
 } from './cards.js';
 import { drawRTKChart, fetchHistory, initHistoryControls } from './charts.js';
 import { fetchActivity, initActivity, initDashboardTabs, paintActivity } from './activity.js';
+import { initAnalysis, fetchAnalysis } from './analysis.js';
 import { initTheme } from './theme.js';
 import { initLayout, reapplyCardLayout } from './layout.js';
 import { initSettings, initSettingsAndPricing } from './settings.js';
@@ -66,6 +67,11 @@ function render(stats) {
   // snapshot when that tab is showing (its rows come from /api/activity, but the
   // RTK/Headroom pills mirror these SSE stats).
   if (document.getElementById('view-activity')?.classList.contains('active')) paintActivity();
+
+  // Analysis view's SSE-derived charts (RTK period/exec/pct + Headroom spend
+  // tiles) track the same snapshot; its heavy endpoints refetch on their own
+  // throttle. Cheap no-op when the tab is hidden.
+  if (document.getElementById('view-analysis')?.classList.contains('active')) fetchAnalysis(false);
 
   renderVersion(stats.version);
   renderUpdate(stats.version);
@@ -192,6 +198,7 @@ setInterval(fetchHistory, 60000);
 
 initDashboardTabs();
 initActivity();
+initAnalysis();
 fetchActivity(); // initial paint; subsequent refreshes ride the SSE/countdown tick in render()
 
 initLayout();         // grab board refs + wire drag before any applyLayout()

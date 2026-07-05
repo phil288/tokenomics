@@ -9,4 +9,5 @@ export const state = {
   rtkTotals: null,        // full-history RTK { gain, loss, net, ... } from /api/activity
   activityFilter: 'all',  // activity card source filter: all | rtk | headroom
   activityOpen: {},       // expanded activity rows (key→true), persisted across repaints
+  analysisLayout: {},     // Analysis free-drag positions: { "<block-id>": {x,y,w,h} }
 };

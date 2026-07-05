@@ -7,8 +7,12 @@ export function tc(name) {
 
 export function ht(n) {
   if (n === null || n === undefined) return '—';
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  const neg = n < 0 ? '-' : '';
+  const a = Math.abs(n);
+  if (a >= 1e12) return neg + (a / 1e12).toFixed(2) + 'T';
+  if (a >= 1e9) return neg + (a / 1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return neg + (a / 1e6).toFixed(2) + 'M';
+  if (a >= 1e3) return neg + (a / 1e3).toFixed(1) + 'k';
   return String(n);
 }
 export function pct(n) { return (n === null || n === undefined) ? '—' : n.toFixed(1) + '%'; }

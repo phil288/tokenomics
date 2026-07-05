@@ -73,11 +73,31 @@ function snapshotWindow(wt) {
 // Pull every figure the dashboard displays out of a RAW (un-offset) stats
 // payload. This is exactly the set applyBaseline() subtracts, so capture and
 // apply stay in lockstep.
+// The numeric fields of one RTK period bucket (daily/weekly/monthly row) at
+// reset time, so the containing bucket's chart bar can start from zero.
+function bucketSnap(row) {
+  return {
+    saved_tokens: row.saved_tokens || 0,
+    commands: row.commands || 0,
+    input_tokens: row.input_tokens || 0,
+    output_tokens: row.output_tokens || 0,
+    total_time_ms: row.total_time_ms || 0,
+  };
+}
+
 function snapshotTotals(stats) {
   const rs = (stats.rtk && stats.rtk.summary) || {};
   const daily = (stats.rtk && Array.isArray(stats.rtk.daily)) ? stats.rtk.daily : [];
+  const weekly = (stats.rtk && Array.isArray(stats.rtk.weekly)) ? stats.rtk.weekly : [];
+  const monthly = (stats.rtk && Array.isArray(stats.rtk.monthly)) ? stats.rtk.monthly : [];
   const resetDay = new Date().toISOString().slice(0, 10);
   const dayRow = daily.find(r => String(r.date) === resetDay) || null;
+  // Reset falls inside one weekly and one monthly rollup too — snapshot those
+  // buckets so the Analysis view's weekly/monthly charts can zero their
+  // reset-period bar (same trap as the daily bucket: the whole-period rollup
+  // already contains pre-reset activity).
+  const weekRow = weekly.find(r => String(r.week_start) <= resetDay && resetDay <= String(r.week_end)) || null;
+  const monthRow = monthly.find(r => String(r.month) === resetDay.slice(0, 7)) || null;
   const c = stats.caveman || {};
   const life = (stats.headroom && stats.headroom.savings && stats.headroom.savings.lifetime) || {};
   const wt = (stats.headroom && stats.headroom.window_tokens) || {};
@@ -90,14 +110,9 @@ function snapshotTotals(stats) {
       total_output: rs.total_output || 0,
       // The reset-day daily bucket at reset time (whole-day rollup), so its
       // chart bar can start from zero instead of showing pre-reset activity.
-      day: dayRow ? {
-        date: dayRow.date,
-        saved_tokens: dayRow.saved_tokens || 0,
-        commands: dayRow.commands || 0,
-        input_tokens: dayRow.input_tokens || 0,
-        output_tokens: dayRow.output_tokens || 0,
-        total_time_ms: dayRow.total_time_ms || 0,
-      } : null,
+      day: dayRow ? { date: dayRow.date, ...bucketSnap(dayRow) } : null,
+      week: weekRow ? { week_start: weekRow.week_start, ...bucketSnap(weekRow) } : null,
+      month: monthRow ? { month: monthRow.month, ...bucketSnap(monthRow) } : null,
     },
     caveman: {
       total_saved_tokens: c.total_saved_tokens || 0,
@@ -109,6 +124,10 @@ function snapshotTotals(stats) {
       tokens_saved: life.tokens_saved || 0,
       compression_savings_usd: life.compression_savings_usd || 0,
       requests: life.requests || 0,
+      // Spend denominator (gross input volume/cost) — offset alongside the
+      // savings so the "savings as % of spend" ratio stays coherent under reset.
+      total_input_tokens: life.total_input_tokens || 0,
+      total_input_cost_usd: life.total_input_cost_usd || 0,
       window: snapshotWindow(wt),
     },
   };
@@ -187,6 +206,37 @@ function applyBaseline(stats) {
           return nr;
         });
     }
+
+    // Weekly/monthly breakdowns (charted by the Analysis view): same treatment
+    // as daily — drop periods that ended before the reset, subtract the
+    // reset-period bucket's value-at-reset. Guarded per sub-object so an older
+    // baseline (no .week/.month) leaves them untouched until the next reset.
+    const offsetBucket = (r, base) => {
+      const nr = {
+        ...r,
+        saved_tokens: sub(r.saved_tokens, base.saved_tokens),
+        commands: sub(r.commands, base.commands),
+        input_tokens: sub(r.input_tokens, base.input_tokens),
+        output_tokens: sub(r.output_tokens, base.output_tokens),
+        total_time_ms: sub(r.total_time_ms, base.total_time_ms),
+      };
+      nr.savings_pct = nr.input_tokens ? (nr.saved_tokens / nr.input_tokens) * 100 : 0;
+      return nr;
+    };
+    if (Array.isArray(stats.rtk.weekly) && b.rtk.week !== undefined) {
+      const resetDay = new Date(b.t).toISOString().slice(0, 10);
+      const wkBase = b.rtk.week;
+      stats.rtk.weekly = stats.rtk.weekly
+        .filter(r => String(r.week_end) >= resetDay)
+        .map(r => (wkBase && String(r.week_start) === String(wkBase.week_start)) ? offsetBucket(r, wkBase) : r);
+    }
+    if (Array.isArray(stats.rtk.monthly) && b.rtk.month !== undefined) {
+      const resetMonth = new Date(b.t).toISOString().slice(0, 7);
+      const moBase = b.rtk.month;
+      stats.rtk.monthly = stats.rtk.monthly
+        .filter(r => String(r.month) >= resetMonth)
+        .map(r => (moBase && String(r.month) === String(moBase.month)) ? offsetBucket(r, moBase) : r);
+    }
   }
 
   // ---- Caveman ----
@@ -216,6 +266,12 @@ function applyBaseline(stats) {
     life.tokens_saved = sub(life.tokens_saved, b.headroom.tokens_saved);
     life.compression_savings_usd = sub(life.compression_savings_usd, b.headroom.compression_savings_usd);
     life.requests = sub(life.requests, b.headroom.requests);
+    // Spend denominator — only when the baseline recorded it (newer builds);
+    // otherwise leave absolute rather than faking a "since reset" ratio.
+    if (typeof b.headroom.total_input_tokens === 'number') {
+      life.total_input_tokens = sub(life.total_input_tokens, b.headroom.total_input_tokens);
+      life.total_input_cost_usd = sub(life.total_input_cost_usd, b.headroom.total_input_cost_usd);
+    }
   }
 
   // ---- Headroom window telemetry (top-level + per-model) ----
