@@ -1691,6 +1691,10 @@ header h1 span {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 18px;
+  /* content-height rows (not stretched to the tallest sibling) so a panel is the
+     same height in normal grid flow and in absolute arrange mode — toggling
+     arrange no longer resizes charts or flashes empty space */
+  align-items: start;
 }
 .an-block {
   position: relative;

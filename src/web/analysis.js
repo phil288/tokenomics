@@ -35,10 +35,21 @@ const setSince = (id, since) => {
 
 // ---- chart helpers (own registry so theme redraw is self-contained) ----
 
+// Update an existing chart in place (no teardown, no animation) so periodic
+// repaints don't flash or replay the grow animation. Options are reassigned each
+// time so a theme flip's new axis/grid colors (read via tc()) still take effect.
+// Only a changed chart TYPE forces a rebuild (Chart.js can't switch type live).
 function upsertChart(id, cfg) {
   const cv = document.getElementById(id);
   if (!cv) return;
-  if (anCharts[id]) anCharts[id].destroy();
+  const ex = anCharts[id];
+  if (ex && ex.config.type === cfg.type) {
+    ex.data = cfg.data;
+    ex.options = cfg.options;
+    ex.update('none');
+    return;
+  }
+  if (ex) ex.destroy();
   anCharts[id] = new Chart(cv.getContext('2d'), cfg);
 }
 
@@ -329,9 +340,18 @@ async function paintQuota() {
 
 // ---- fetch + orchestration ----
 
-function paintFromCache() {
+// SSE-derived surfaces only — cheap, safe to repaint on every 10s tick. Charts
+// update in place (no flicker); the spend tiles are plain HTML.
+function paintLive() {
   paintRtkPeriod();
   paintHrSpend();
+}
+
+// Everything, including the on-demand endpoint payloads. Runs only after a
+// refetch (or theme flip / view open) — NOT on every SSE tick — so the tables
+// and heavy charts don't re-render (and reset scroll) 6×/minute.
+function paintFromCache() {
+  paintLive();
   if (cache.projects) paintRtkProjects(cache.projects);
   if (cache.types) paintRtkTypes(cache.types);
   if (cache.losses) paintRtkLosses(cache.losses);
@@ -347,7 +367,9 @@ async function getJson(url) {
 export async function fetchAnalysis(force) {
   if (!isVisible()) return;
   const now = Date.now();
-  if (!force && now - lastFetch < 30000) { paintFromCache(); return; }
+  // Within the throttle window, only the live SSE-derived charts update; the
+  // fetched tables/charts stay put until the next real refetch.
+  if (!force && now - lastFetch < 30000) { paintLive(); return; }
   lastFetch = now;
   const [projects, types, losses, caveman, models, ops] = await Promise.all([
     getJson('/api/analysis/rtk/projects'),
