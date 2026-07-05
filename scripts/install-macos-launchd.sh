@@ -9,7 +9,7 @@ fi
 TOKENOMICS_SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TOKENOMICS_DIR="${TOKENOMICS_DIR:-/Users/Shared/tokenomics}"
 TOKENOMICS_DATA_DIR="${TOKENOMICS_DATA_DIR:-/Users/Shared/tokenomics-data}"
-TOKENOMICS_HOMES="${TOKENOMICS_HOMES:-/Users/mitch,/Users/michelmatta}"
+TOKENOMICS_HOMES="${TOKENOMICS_HOMES:-/Users/username1,/Users/username2}"
 PORT="${PORT:-8788}"
 NODE_BIN="${NODE_BIN:-/usr/bin/env node}"
 PLIST="/Library/LaunchDaemons/com.tokenomics.dashboard.plist"
@@ -22,7 +22,7 @@ rsync -a --delete \
 
 chown -R root:wheel "${TOKENOMICS_DIR}" "${TOKENOMICS_DATA_DIR}"
 chmod -R a+rX "${TOKENOMICS_DIR}" "${TOKENOMICS_DATA_DIR}"
-chmod 777 "${TOKENOMICS_DATA_DIR}"
+chmod 700 "${TOKENOMICS_DATA_DIR}"
 
 node_cmd=("${(@s: :)NODE_BIN}")
 cat > "${PLIST}" <<EOF

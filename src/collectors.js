@@ -15,7 +15,7 @@ function configuredHomes() {
   const homes = raw.split(',')
     .map(s => s.trim())
     .filter(Boolean);
-  return homes.length ? homes : [HOME];
+  return homes.length ? [...new Set(homes)] : [HOME];
 }
 
 function userLabel(home) {
@@ -250,9 +250,17 @@ async function probeRtkInstalled() {
 
 async function collectRTK() {
   const homes = rtkDataHomes();
-  const envs = settings.RTK_DATA_HOME || process.env.RTK_DATA_HOME
-    ? (homes.length ? homes.map(h => ({ XDG_DATA_HOME: h })) : [{}])
-    : configuredHomes().map(home => ({ HOME: home }));
+  const envs = [];
+  if (settings.RTK_DATA_HOME || process.env.RTK_DATA_HOME) {
+    envs.push(...(homes.length ? homes.map(h => ({ XDG_DATA_HOME: h })) : [{}]));
+  } else {
+    const confHomes = configuredHomes();
+    for (const h of homes) {
+      const matchingHome = confHomes.find(home => h.startsWith(home)) || HOME;
+      envs.push({ HOME: matchingHome, XDG_DATA_HOME: h });
+    }
+    if (!envs.length) envs.push(...confHomes.map(home => ({ HOME: home })));
+  }
 
   const [results, install] = await Promise.all([
     Promise.all(
@@ -500,13 +508,14 @@ async function collectHeadroom() {
   const parse = (raw) => { if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } };
   const subs = [];
   const savingsDocs = [];
-  for (const home of configuredHomes()) {
+  const results = await Promise.all(configuredHomes().map(async (home) => {
     const [subRaw, savRaw] = await Promise.all([
       readFile(headroomSubPath(home)),
       readFile(headroomSavingsPath(home)),
     ]);
-    const sub = parse(subRaw);
-    const sav = parse(savRaw);
+    return { sub: parse(subRaw), sav: parse(savRaw) };
+  }));
+  for (const { sub, sav } of results) {
     if (sub) subs.push(sub);
     if (sav) savingsDocs.push(sav);
   }
@@ -828,10 +837,13 @@ function headroomLastUsed(headroom) {
 // session. The .caveman-active / statusline files are touched live, so take the
 // most recent signal across all three.
 async function cavemanLastUsed() {
+  const homes = configuredHomes();
+  const histTimestamps = await Promise.all(homes.map(home => maxJsonlLastUsed(cavemanHistoryPath(home), 'ts')));
   const values = [];
-  for (const home of configuredHomes()) {
+  for (let i = 0; i < homes.length; i++) {
+    const home = homes[i];
     values.push(
-      await maxJsonlLastUsed(cavemanHistoryPath(home), 'ts'),
+      histTimestamps[i],
       fileMtimeISO(path.join(home, '.claude', '.caveman-active')),
       fileMtimeISO(path.join(home, '.claude', '.caveman-statusline-suffix')),
     );

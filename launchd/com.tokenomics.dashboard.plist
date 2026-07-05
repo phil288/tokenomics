@@ -25,7 +25,7 @@
     <key>PORT</key>
     <string>8788</string>
     <key>TOKENOMICS_HOMES</key>
-    <string>/Users/mitch,/Users/michelmatta</string>
+    <string>/Users/username1,/Users/username2</string>
     <key>TOKENOMICS_DATA_DIR</key>
     <string>/Users/Shared/tokenomics-data</string>
   </dict>
