@@ -85,12 +85,16 @@ function bucketSnap(row) {
   };
 }
 
-function snapshotTotals(stats) {
+// `now` is the reset instant (ms epoch). It is BOTH the baseline's `t` and the
+// day/week/month the reset falls in, so capture and apply share one source of
+// truth. Defaults to Date.now() (production); tests inject a fixed instant so
+// the reset-period bucket match doesn't drift with the wall clock.
+function snapshotTotals(stats, now = Date.now()) {
   const rs = (stats.rtk && stats.rtk.summary) || {};
   const daily = (stats.rtk && Array.isArray(stats.rtk.daily)) ? stats.rtk.daily : [];
   const weekly = (stats.rtk && Array.isArray(stats.rtk.weekly)) ? stats.rtk.weekly : [];
   const monthly = (stats.rtk && Array.isArray(stats.rtk.monthly)) ? stats.rtk.monthly : [];
-  const resetDay = new Date().toISOString().slice(0, 10);
+  const resetDay = new Date(now).toISOString().slice(0, 10);
   const dayRow = daily.find(r => String(r.date) === resetDay) || null;
   // Reset falls inside one weekly and one monthly rollup too — snapshot those
   // buckets so the Analysis view's weekly/monthly charts can zero their
@@ -102,7 +106,7 @@ function snapshotTotals(stats) {
   const life = (stats.headroom && stats.headroom.savings && stats.headroom.savings.lifetime) || {};
   const wt = (stats.headroom && stats.headroom.window_tokens) || {};
   return {
-    t: Date.now(),
+    t: now,
     rtk: {
       total_saved: rs.total_saved || 0,
       total_commands: rs.total_commands || 0,
@@ -137,8 +141,8 @@ function snapshotTotals(stats) {
 // `rtkTotals` is the whole-DB gain/loss rollup (collectRtkTotals()) captured at
 // reset time so the Activity tab's lifetime totals can be offset too. Passed in
 // rather than imported to avoid a require cycle with collectors.js.
-function captureBaseline(rawStats, rtkTotals) {
-  baseline = snapshotTotals(rawStats || {});
+function captureBaseline(rawStats, rtkTotals, now = Date.now()) {
+  baseline = snapshotTotals(rawStats || {}, now);
   baseline.rtkTotals = {
     gain: (rtkTotals && rtkTotals.gain) || 0,
     loss: (rtkTotals && rtkTotals.loss) || 0,

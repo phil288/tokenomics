@@ -265,8 +265,13 @@ function richStats(day = '2026-07-05') {
   };
 }
 
+// Inject a fixed reset instant that lands inside the fixture's reset week
+// (2026-06-29..2026-07-05) so the bucket match is deterministic regardless of
+// the real wall clock (snapshotTotals derives day/week/month from this).
+const RESET_AT = Date.parse('2026-07-05T12:00:00Z');
+
 test('snapshotTotals captures the reset-week/month buckets and Headroom spend denominator', () => {
-  const snap = snapshotTotals(richStats('2026-07-05'));
+  const snap = snapshotTotals(richStats('2026-07-05'), RESET_AT);
   assert.equal(snap.rtk.week.week_start, '2026-06-29');
   assert.equal(snap.rtk.week.saved_tokens, 900);
   assert.equal(snap.rtk.month.month, '2026-07');
@@ -276,10 +281,9 @@ test('snapshotTotals captures the reset-week/month buckets and Headroom spend de
 });
 
 test('applyBaseline zeroes the reset-week/month bar and drops earlier periods', () => {
-  // Pin capture time to the reset day so new Date(b.t) lands on 2026-07-05.
-  captureBaseline(richStats('2026-07-05'));
-  const b = getBaseline();
-  b.t = Date.parse('2026-07-05T12:00:00Z'); // deterministic reset instant
+  // Pin capture time to the reset instant so both snapshotTotals (bucket match)
+  // and applyBaseline (new Date(b.t)) agree on the reset day = 2026-07-05.
+  captureBaseline(richStats('2026-07-05'), undefined, RESET_AT);
 
   const grown = richStats('2026-07-05');
   grown.rtk.weekly[1].saved_tokens = 1400;   // +500 in the reset week

@@ -49,10 +49,18 @@ before(async () => {
   port = await getFreePort();
   base = `http://127.0.0.1:${port}`;
 
+  // Point HOME at an empty dir (no Cursor DB) and strip CURSOR_ACCESS_TOKEN so
+  // token resolution is deterministically empty — the /api/cursor/test route
+  // then short-circuits to "no token found" instead of hitting the live API.
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-home-'));
+  const childEnv = { ...process.env };
+  delete childEnv.CURSOR_ACCESS_TOKEN;
+
   child = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
     env: {
-      ...process.env,
+      ...childEnv,
+      HOME: fakeHome,
       PORT: String(port),
       TOKENOMICS_DATA_DIR: dataDir,
       REFRESH_MS: '600000',
@@ -147,6 +155,42 @@ test('GET /api/settings returns config with pricing and visibility flags', async
   for (const k of ['RTK_ENABLED', 'CAVEMAN_ENABLED', 'CLAUDE_ENABLED', 'HEADROOM_ENABLED']) {
     assert.equal(typeof cfg[k], 'boolean', `${k} should be boolean`);
   }
+});
+
+test('GET /api/cursor/token returns {token,source} and honours the CURSOR_ENABLED gate', async () => {
+  // The server boots with CURSOR_ENABLED:false (fixture), so the gate short-
+  // circuits to a null token regardless of any DB/env token on the host.
+  const res = await fetch(base + '/api/cursor/token');
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /application\/json/);
+  const body = await res.json();
+  assert.deepEqual(body, { token: null, source: null });
+});
+
+test('POST /api/cursor/test short-circuits to "no token found" when nothing is stored', async () => {
+  // fakeHome has no Cursor DB and CURSOR_ACCESS_TOKEN is stripped, so a blank
+  // body resolves no token and never touches the network.
+  const res = await fetch(base + '/api/cursor/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: '' }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.error, 'no token found');
+  assert.equal(body.source, null);
+});
+
+test('POST /api/cursor/test rejects invalid JSON with 400', async () => {
+  const res = await fetch(base + '/api/cursor/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{ not json',
+  });
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.match(body.error, /Invalid JSON/);
 });
 
 test('POST /api/settings persists changes and GET reflects them', async () => {

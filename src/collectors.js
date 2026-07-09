@@ -35,7 +35,7 @@ const {
   parseProxyPerfLine,
   parseSessionStatLine,
 } = require('./collectors-headroom');
-const { collectCursor, readCursorAccessToken } = require('./collectors-cursor');
+const { collectCursor, readCursorAccessToken, resolveCursorToken, testCursorToken } = require('./collectors-cursor');
 const { pollAntigravity, parseAgyUsage, getAntigravityCache } = require('./collectors-antigravity');
 const { collectActivity, clampLimit } = require('./collectors-activity');
 
@@ -107,6 +107,8 @@ module.exports = {
   collectCaveman,
   collectHeadroom,
   collectCursor,
+  resolveCursorToken,
+  testCursorToken,
   pollAntigravity,
   parseAgyUsage,
   parseTextRTK,

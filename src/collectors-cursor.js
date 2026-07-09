@@ -3,22 +3,32 @@ const path = require('path');
 const { settings } = require('./settings');
 const { HOME, configuredHomes } = require('./collector-utils');
 
-async function collectCursor() {
-  if (settings.CURSOR_ENABLED === false) {
-    return { disabled: true };
+// Resolve the effective Cursor access token from the same chain collectCursor
+// uses: saved settings → env → Cursor's local SQLite store (scanned across
+// every configured home, Linux + macOS paths). Returns the token plus which
+// source it came from (null token → no source), so the settings UI can reveal
+// a DB/env token the user never typed into the field.
+function resolveCursorToken() {
+  const settingsToken = (settings.CURSOR_ACCESS_TOKEN || '').trim();
+  if (settingsToken) return { token: settingsToken, source: 'settings' };
+
+  const envToken = (process.env.CURSOR_ACCESS_TOKEN || '').trim();
+  if (envToken) return { token: envToken, source: 'env' };
+
+  const homes = [...new Set([HOME, ...configuredHomes()])];
+  for (const home of homes) {
+    const t = readCursorAccessToken(home);
+    if (t) return { token: String(t), source: 'db' };
   }
-  let token = settings.CURSOR_ACCESS_TOKEN || process.env.CURSOR_ACCESS_TOKEN;
 
-  if (!token) {
-    const homes = [...new Set([HOME, ...configuredHomes()])];
-    for (const home of homes) {
-      token = readCursorAccessToken(home);
-      if (token) break;
-    }
-  }
+  return { token: null, source: null };
+}
 
-  if (!token) return { error: 'no token found' };
-
+// Low-level POST to Cursor's usage RPC. Single place the token is exchanged for
+// a live API response — shared by collectCursor (usage data) and
+// testCursorToken (validity check) so the auth/error handling stays identical.
+// Returns { status, data } on 200, else { status, error } / { error }.
+async function cursorUsageRequest(token) {
   try {
     const res = await fetch('https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage', {
       method: 'POST',
@@ -35,13 +45,41 @@ async function collectCursor() {
         const parsed = JSON.parse(errText);
         if (parsed.message) msg = parsed.message;
       } catch {}
-      return { error: msg };
+      return { status: res.status, error: msg };
     }
-    const data = await res.json();
-    return data;
+    return { status: 200, data: await res.json() };
   } catch (e) {
     return { error: e.message };
   }
+}
+
+// Validate a Cursor token against the live API without exposing the usage
+// payload. `token` blank → falls back to the effective token (settings → env →
+// DB). Returns { ok, source?, status?, error? } for the settings "Test" button.
+async function testCursorToken(token) {
+  let tok = (token || '').trim();
+  let source = 'provided';
+  if (!tok) {
+    const resolved = resolveCursorToken();
+    tok = resolved.token;
+    source = resolved.source;
+  }
+  if (!tok) return { ok: false, error: 'no token found', source: null };
+
+  const r = await cursorUsageRequest(tok);
+  if (r.error) return { ok: false, status: r.status, error: r.error, source };
+  return { ok: true, status: r.status, source };
+}
+
+async function collectCursor() {
+  if (settings.CURSOR_ENABLED === false) {
+    return { disabled: true };
+  }
+  const { token } = resolveCursorToken();
+  if (!token) return { error: 'no token found' };
+
+  const r = await cursorUsageRequest(token);
+  return r.error ? { error: r.error } : r.data;
 }
 
 function cursorStateDbPaths(home) {
@@ -70,4 +108,4 @@ function readCursorAccessToken(home) {
   return '';
 }
 
-module.exports = { collectCursor, readCursorAccessToken };
+module.exports = { collectCursor, readCursorAccessToken, resolveCursorToken, testCursorToken };

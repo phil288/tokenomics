@@ -6,6 +6,20 @@ import { fetchHistory } from './charts.js';
 
 let settingsOverlay, cursorEnabledCb, cursorTokenGroup, pricingTableBody;
 
+// Force the Cursor token field back to its masked/hidden state (password input,
+// closed-eye icon). Called on every modal open so a token revealed in a prior
+// session never reappears in plain text; the eye button reveals it again.
+function resetCursorTokenReveal() {
+  const input = document.getElementById('set-cursor-token');
+  const closed = document.getElementById('eye-icon-closed');
+  const open = document.getElementById('eye-icon-open');
+  const status = document.getElementById('cursor-token-status');
+  if (input) { input.type = 'password'; delete input.dataset.tokenSource; }
+  if (closed) closed.style.display = 'block';
+  if (open) open.style.display = 'none';
+  if (status) status.textContent = '';
+}
+
 // Lightweight, non-blocking toast for action feedback (success / failure).
 let toastTimer = null;
 function showToast(msg, ok = true) {
@@ -36,6 +50,10 @@ async function loadSettingsUI() {
     document.getElementById('set-vis-antigravity').checked = config.ANTIGRAVITY_ENABLED !== false;
 
     document.getElementById('set-cursor-token').value = config.CURSOR_ACCESS_TOKEN || '';
+    // Always (re)open with the token masked — the eye reveals it. Resets any
+    // reveal/fetch state left over from a previous open so it never reopens
+    // showing a plain-text token.
+    resetCursorTokenReveal();
     document.getElementById('set-rtk-home').value = config.RTK_DATA_HOME || '';
     document.getElementById('set-headroom-path').value = config.HEADROOM_SAVINGS_PATH || '';
     document.getElementById('set-headroom-sub-path').value = config.HEADROOM_SUBSCRIPTION_STATE_PATH || '';
@@ -92,15 +110,70 @@ export function initSettings() {
   const eyeIconOpen = document.getElementById('eye-icon-open');
   const cursorTokenInput = document.getElementById('set-cursor-token');
 
-  toggleCursorTokenBtn.addEventListener('click', () => {
+  toggleCursorTokenBtn.addEventListener('click', async () => {
     if (cursorTokenInput.type === 'password') {
       cursorTokenInput.type = 'text';
       eyeIconClosed.style.display = 'none';
       eyeIconOpen.style.display = 'block';
+      // Reveal on an empty field → pull the effective token (settings → env →
+      // Cursor DB) so the user can see a stored token they never typed here.
+      // Never clobber text the user is editing; only fill when blank.
+      if (!cursorTokenInput.value) {
+        try {
+          const res = await fetch('/api/cursor/token');
+          const { token, source } = await res.json();
+          if (token && !cursorTokenInput.value) {
+            cursorTokenInput.value = token;
+            cursorTokenInput.dataset.tokenSource = source || '';
+          }
+        } catch (err) {
+          console.error('Failed to fetch Cursor token:', err);
+        }
+      }
     } else {
       cursorTokenInput.type = 'password';
       eyeIconClosed.style.display = 'block';
       eyeIconOpen.style.display = 'none';
+    }
+  });
+
+  // "Test token" — validate against the live Cursor API. Sends the field value
+  // (blank → server tests the effective settings/env/DB token), shows the
+  // outcome inline without persisting anything.
+  const testTokenBtn = document.getElementById('test-cursor-token');
+  const tokenStatus = document.getElementById('cursor-token-status');
+  testTokenBtn.addEventListener('click', async () => {
+    testTokenBtn.disabled = true;
+    tokenStatus.textContent = 'Testing…';
+    tokenStatus.style.color = 'var(--muted)';
+    try {
+      const res = await fetch('/api/cursor/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: cursorTokenInput.value.trim() })
+      });
+      // A stale server (pre-route) or proxy returns non-JSON (e.g. "Not found").
+      // Parse defensively so the user sees the real HTTP status, not a JSON
+      // SyntaxError.
+      const raw = await res.text();
+      let r;
+      try { r = JSON.parse(raw); }
+      catch {
+        const hint = res.status === 404 ? ' — restart the server' : '';
+        throw new Error(`HTTP ${res.status}: ${raw.slice(0, 80) || res.statusText}${hint}`);
+      }
+      if (r.ok) {
+        tokenStatus.textContent = `✓ Valid${r.source ? ` (${r.source})` : ''}`;
+        tokenStatus.style.color = 'var(--ok, #3fb950)';
+      } else {
+        tokenStatus.textContent = `✗ ${r.error || 'Invalid token'}`;
+        tokenStatus.style.color = 'var(--danger, #f85149)';
+      }
+    } catch (err) {
+      tokenStatus.textContent = `✗ ${err.message}`;
+      tokenStatus.style.color = 'var(--danger, #f85149)';
+    } finally {
+      testTokenBtn.disabled = false;
     }
   });
 

@@ -48,6 +48,8 @@ test('each setting field lives in its expected panel', () => {
   inPanel('sources', 'set-vis-rtk');
   inPanel('sources', 'set-vis-antigravity');
   inPanel('connections', 'set-cursor-token');
+  inPanel('connections', 'test-cursor-token');
+  inPanel('connections', 'cursor-token-status');
   inPanel('connections', 'set-rtk-home');
   inPanel('connections', 'set-headroom-health-url');
   inPanel('pricing', 'pricing-table-body');
@@ -65,6 +67,33 @@ test('the restore-baseline control is present and wired to DELETE /api/baseline'
 test('reset-stats is wired to POST /api/history/reset with the confirm header', () => {
   // The server rejects unconfirmed resets; the client must send the header.
   assert.match(SETTINGS_JS, /X-Tokenomics-Reset-Confirm['"]:\s*['"]manual['"]/, 'reset fetch missing confirm header');
+});
+
+test('the cursor token field is re-masked every time the settings modal opens', () => {
+  // Opening the modal must reset the field to hidden (password) so a token
+  // revealed in a prior open never reappears in plain text.
+  assert.match(SETTINGS_JS, /function resetCursorTokenReveal\(\)/, 'resetCursorTokenReveal helper missing');
+  assert.match(SETTINGS_JS, /input\.type\s*=\s*'password'/, 'reset must force the field back to password type');
+  // …and it must be invoked from the modal-open/populate path.
+  assert.match(SETTINGS_JS, /resetCursorTokenReveal\(\);/, 'reset not called on open');
+});
+
+test('the cursor-token reveal button fetches the effective token from /api/cursor/token', () => {
+  // Revealing an empty token field pulls the stored (settings/env/DB) token so
+  // the user can view a token they never typed in — but must not clobber text
+  // they are editing (only fill when blank).
+  assert.match(SETTINGS_JS, /fetch\('\/api\/cursor\/token'\)/, 'reveal not wired to GET /api/cursor/token');
+  assert.match(SETTINGS_JS, /if\s*\(!cursorTokenInput\.value\)/, 'must guard against clobbering a non-empty field');
+});
+
+test('the Test-token button POSTs the field value to /api/cursor/test', () => {
+  assert.ok(HTML.includes('id="test-cursor-token"'), 'Test token button missing from HTML');
+  assert.ok(HTML.includes('id="cursor-token-status"'), 'token status span missing from HTML');
+  assert.match(SETTINGS_JS, /fetch\('\/api\/cursor\/test'/, 'Test button not wired to POST /api/cursor/test');
+  assert.match(SETTINGS_JS, /method:\s*'POST'/, 'cursor test must be a POST');
+  // Must read the body as text and JSON.parse defensively — a stale server
+  // returns non-JSON ("Not found"), which would otherwise throw a SyntaxError.
+  assert.match(SETTINGS_JS, /res\.text\(\)[\s\S]*JSON\.parse/, 'cursor test must parse the response defensively');
 });
 
 test('pricing prefix values are attribute-escaped before templating', () => {

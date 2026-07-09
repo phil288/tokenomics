@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { getSettings, updateSettings } = require('./src/settings');
-const { collectStats, collectStatsRaw, pollAntigravity, collectActivity, collectRtkTotals } = require('./src/collectors');
+const { collectStats, collectStatsRaw, pollAntigravity, collectActivity, collectRtkTotals, resolveCursorToken, testCursorToken } = require('./src/collectors');
 const { history, recordSnapshot, clearHistory } = require('./src/history');
 const { captureBaseline, clearBaseline, applyActivityBaseline } = require('./src/baseline');
 const analysis = require('./src/analysis');
@@ -162,6 +162,55 @@ const server = http.createServer(async (req, res) => {
     clearBaseline();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
+  } else if (pathname === '/api/cursor/token' && req.method === 'GET') {
+    // On-demand reveal of the effective Cursor token (settings → env → DB).
+    // Kept OUT of /api/settings so the JWT never rides the routine settings
+    // fetch — the UI asks for it only when the user clicks reveal on an empty
+    // field. Honours the CURSOR_ENABLED gate.
+    if (getSettings().CURSOR_ENABLED === false) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ token: null, source: null }));
+    } else {
+      const { token, source } = resolveCursorToken();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ token: token || null, source }));
+    }
+  } else if (pathname === '/api/cursor/test' && req.method === 'POST') {
+    // Validate a Cursor token against the live API. Body { token } is optional —
+    // blank tests the effective (settings/env/DB) token, so the user can check
+    // either a value they just typed OR the stored one before saving.
+    let body = '';
+    let tooLarge = false;
+    req.on('data', chunk => {
+      if (tooLarge) return;
+      body += chunk;
+      if (body.length > 1e6) {   // a JWT is a few KB; anything near 1MB is garbage
+        tooLarge = true;
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Payload too large' }));
+        req.destroy();
+      }
+    });
+    req.on('end', async () => {
+      if (tooLarge) return;
+      let token = '';
+      if (body) {
+        try { token = JSON.parse(body).token || ''; }
+        catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON: ' + err.message }));
+          return;
+        }
+      }
+      try {
+        const result = await testCursorToken(token);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+    });
   } else if (pathname === '/api/settings' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(getSettings()));
