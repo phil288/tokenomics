@@ -3,8 +3,42 @@ import { PRICING } from './pricing.js';
 import { setCardLayout, hasSavedLayout, applyLayout, setAnalysisLayout } from './layout.js';
 import { manualRefresh } from './main.js';
 import { fetchHistory } from './charts.js';
+import {
+  setPaceAlertConfig, requestNotificationPermission, notificationPermission,
+  notificationsSupported, sendTestNotification, resetPaceAlerts
+} from './notify.js';
 
 let settingsOverlay, cursorEnabledCb, cursorTokenGroup, pricingTableBody;
+
+// Feed the notifier from a settings payload (server response or initial load).
+function applyPaceAlertSettings(config) {
+  setPaceAlertConfig({
+    enabled: config.PACE_ALERTS_ENABLED === true,
+    warnPct: config.PACE_ALERT_WARN_PCT,
+    overPct: config.PACE_ALERT_OVER_PCT,
+  });
+}
+
+function setNotifyStatus(msg, tone = 'muted') {
+  const el = document.getElementById('notify-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = tone === 'err' ? 'var(--danger, #f85149)'
+    : tone === 'ok' ? 'var(--ok, #3fb950)' : 'var(--muted)';
+}
+
+// Alerts only reach the desktop with browser permission — say so plainly
+// instead of silently never firing.
+function refreshNotifyStatus() {
+  if (!notificationsSupported()) {
+    setNotifyStatus('This browser does not support desktop notifications', 'err');
+    return;
+  }
+  const p = notificationPermission();
+  if (p === 'granted') setNotifyStatus('Notifications allowed', 'ok');
+  else if (p === 'denied') setNotifyStatus('Blocked by the browser — allow notifications for this site', 'err');
+  else setNotifyStatus('Permission not requested yet');
+}
 
 // Force the Cursor token field back to its masked/hidden state (password input,
 // closed-eye icon). Called on every modal open so a token revealed in a prior
@@ -58,6 +92,12 @@ async function loadSettingsUI() {
     document.getElementById('set-headroom-path').value = config.HEADROOM_SAVINGS_PATH || '';
     document.getElementById('set-headroom-sub-path').value = config.HEADROOM_SUBSCRIPTION_STATE_PATH || '';
     document.getElementById('set-headroom-health-url').value = config.HEADROOM_HEALTH_URL !== undefined ? config.HEADROOM_HEALTH_URL : 'http://127.0.0.1:8787/health';
+
+    document.getElementById('set-notify-enabled').checked = config.PACE_ALERTS_ENABLED === true;
+    document.getElementById('set-notify-warn').value = config.PACE_ALERT_WARN_PCT != null ? config.PACE_ALERT_WARN_PCT : 80;
+    document.getElementById('set-notify-over').value = config.PACE_ALERT_OVER_PCT != null ? config.PACE_ALERT_OVER_PCT : 100;
+    applyPaceAlertSettings(config);
+    refreshNotifyStatus();
 
     pricingTableBody.innerHTML = '';
     const pricing = config.PRICING || [];
@@ -177,6 +217,23 @@ export function initSettings() {
     }
   });
 
+  // Ticking the box is the user gesture browsers require before they will show
+  // the permission prompt, so ask right here rather than at save time.
+  const notifyEnabledCb = document.getElementById('set-notify-enabled');
+  notifyEnabledCb.addEventListener('change', async () => {
+    if (!notifyEnabledCb.checked) { refreshNotifyStatus(); return; }
+    const perm = await requestNotificationPermission();
+    if (perm !== 'granted') notifyEnabledCb.checked = false;
+    refreshNotifyStatus();
+  });
+
+  const testNotifyBtn = document.getElementById('test-notification-btn');
+  testNotifyBtn.addEventListener('click', async () => {
+    const perm = await requestNotificationPermission();
+    if (perm !== 'granted') { refreshNotifyStatus(); return; }
+    setNotifyStatus(sendTestNotification() ? 'Test notification sent' : 'Could not send the notification', 'ok');
+  });
+
   addPricingRowBtn.addEventListener('click', (e) => {
     e.preventDefault();
     addPricingRow();
@@ -284,6 +341,9 @@ export function initSettings() {
       HEADROOM_SAVINGS_PATH: document.getElementById('set-headroom-path').value,
       HEADROOM_SUBSCRIPTION_STATE_PATH: document.getElementById('set-headroom-sub-path').value,
       HEADROOM_HEALTH_URL: document.getElementById('set-headroom-health-url').value,
+      PACE_ALERTS_ENABLED: document.getElementById('set-notify-enabled').checked,
+      PACE_ALERT_WARN_PCT: document.getElementById('set-notify-warn').value,
+      PACE_ALERT_OVER_PCT: document.getElementById('set-notify-over').value,
       PRICING: updatedPricing
     };
 
@@ -298,6 +358,12 @@ export function initSettings() {
         if (result.settings && result.settings.PRICING) {
           PRICING.length = 0;
           result.settings.PRICING.forEach(item => PRICING.push(item));
+        }
+        if (result.settings) {
+          // New thresholds re-arm every bar, so a lowered threshold alerts on
+          // the current unit instead of waiting for the next day/hour.
+          resetPaceAlerts();
+          applyPaceAlertSettings(result.settings);
         }
         closeModal();
         manualRefresh();
@@ -320,6 +386,8 @@ export async function initSettingsAndPricing() {
       PRICING.length = 0;
       config.PRICING.forEach(item => PRICING.push(item));
     }
+    // Alerts must be live from page load, not only after the modal is opened.
+    if (config) applyPaceAlertSettings(config);
     // server is the source of truth; fall back to the local mirror if empty
     let layout = (config && config.CARD_LAYOUT) || {};
     if (!Object.keys(layout).length) {

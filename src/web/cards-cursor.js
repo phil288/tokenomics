@@ -1,8 +1,14 @@
 import { usageBar } from './cards-common.js';
 import { computePace, monthlyCycle } from './pace.js';
 
-function cursorBar(label, pctVal, sub, mb = 12, pace = null) {
-  return usageBar(label, pctVal, sub, 'var(--cursor)', mb, pace);
+// `alert` is off for the Total bar: it is max(auto, api), so whichever bar
+// drives it alerts already and a second notification says nothing new.
+function cursorBar(label, pctVal, sub, mb = 12, pace = null, alert = true) {
+  return usageBar(label, pctVal, sub, 'var(--cursor)', mb, {
+    pace,
+    key: alert ? `cursor:${label}` : null,
+    alertLabel: `Cursor · ${label}`,
+  });
 }
 
 // Cursor's quota resets with the billing cycle; the API only gives its start,
@@ -25,7 +31,7 @@ const cursorTotalSub = (autoPct, apiPct) => ({ style: 'opacity: 0.8;', text: `${
 
 function cursorBars(totalPct, autoPct, apiPct, cycle = null) {
   return `
-      ${cursorBar('Total', totalPct, cursorTotalSub(autoPct, apiPct), 12, cursorPace(cycle, totalPct))}
+      ${cursorBar('Total', totalPct, cursorTotalSub(autoPct, apiPct), 12, cursorPace(cycle, totalPct), false)}
       ${cursorBar('Auto + Composer', autoPct, CURSOR_SUB_AUTO, 12, cursorPace(cycle, autoPct))}
       ${cursorBar('API', apiPct, CURSOR_SUB_API, 16, cursorPace(cycle, apiPct))}`;
 }

@@ -110,11 +110,10 @@ test('windowSecsFromLabel maps agy limit labels to window lengths', () => {
   assert.equal(windowSecsFromLabel(''), null);
 });
 
-test('paceMarker positions the tick at the budget, mirrored on remaining-bars', () => {
+test('paceMarker positions the tick at the budget', () => {
   const p = computePace({ usedPct: 22, windowSecs: 7 * DAY, remainingSecs: 4 * DAY + 11 * HOUR });
   assert.equal(p.index, 3);
   assert.match(paceMarker(p), /left:42\.86%/);
-  assert.match(paceMarker(p, true), /left:57\.14%/);
   assert.equal(paceMarker(null), '');
   // never pinned at 100% where a 2px tick would be clipped by the track
   const full = computePace({ usedPct: 99, windowSecs: 5 * HOUR, remainingSecs: 60 });
@@ -149,18 +148,20 @@ test('quota bars render the budget tick inside the track and the note under it',
   assert.match(claude, /modelWindows\.map\(m => quotaBar\(`Weekly · \$\{m\.label\} \(7d\)`.*7 \* DAY\)/);
 
   const common = read('src/web/cards-common.js');
-  assert.match(common, /export function usageBar\(label, pctVal, sub, color = 'var\(--cursor\)', mb = 12, pace = null, paceInvert = false\)/);
-  assert.match(common, /\$\{paceMarker\(pace, paceInvert\)\}/);
+  assert.match(common, /export function usageBar\(label, pctVal, sub, color = 'var\(--cursor\)', mb = 12, paceOpts = null\)/);
+  assert.match(common, /\$\{paceMarker\(pace\)\}/);
   assert.match(common, /\$\{paceNote\(pace\)\}/);
 });
 
-test('antigravity paces off its remaining-quota gauge and rendered refresh string', () => {
+test('antigravity flips its remaining-quota gauge into a used-% bar', () => {
   const agy = read('src/web/cards-antigravity.js');
-  assert.match(agy, /usedPct: 100 - remPct\(lim\)/);
+  // agy reports REMAINING; every bar on the dashboard must fill 0 → 100 with use
+  assert.match(agy, /const usedPct = lim => lim \? \(lim\.full \? 0 : 100 - \(lim\.remainingPct \|\| 0\)\) : 0/);
+  assert.match(agy, /usageBar\(agyLimitLabel\(lim\.label\), usedPct\(lim\)/);
+  assert.doesNotMatch(agy, /invert/);
+  assert.match(agy, /usedPct: usedPct\(lim\)/);
   assert.match(agy, /windowSecs: windowSecsFromLabel\(lim && lim\.label\)/);
   assert.match(agy, /remainingSecs: parseDuration\(lim && lim\.refresh\)/);
-  // bars fill with remaining, so the tick must be mirrored
-  assert.match(agy, /usageBar\(agyLimitLabel\(lim\.label\).*limPace\(lim\), true\)/);
 });
 
 test('cursor paces off the monthly billing cycle for all three bars', () => {
@@ -169,7 +170,7 @@ test('cursor paces off the monthly billing cycle for all three bars', () => {
   assert.match(cur, /function cursorCycleStartMs\(d\)/);
   assert.match(cur, /d\.subscriptionCycleStart \|\| \(d\.billingCycle && d\.billingCycle\.cycleStart\)/);
   assert.match(cur, /const cycle = monthlyCycle\(cursorCycleStartMs\(d\)\)/);
-  assert.match(cur, /cursorBar\('Total'.*cursorPace\(cycle, totalPct\)\)/);
+  assert.match(cur, /cursorBar\('Total'.*cursorPace\(cycle, totalPct\)/);
   assert.match(cur, /cursorBar\('Auto \+ Composer'.*cursorPace\(cycle, autoPct\)\)/);
   assert.match(cur, /cursorBar\('API'.*cursorPace\(cycle, apiPct\)\)/);
   assert.match(cur, /cursorBars\(totalPct, autoPct, apiPct, cycle\)/);

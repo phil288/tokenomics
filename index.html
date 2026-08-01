@@ -57,26 +57,33 @@
   </div>
 
   <div class="board">
-    <!-- LEFT: Claude quota + Headroom -->
-    <div class="board-col">
-      <div class="card" id="claude-card">
-        <div class="card-header">
-          <span class="card-title">Claude quota <span class="card-sub">via Headroom</span></span>
-          <div class="accent" style="background:var(--claude, #d97757)"></div>
-        </div>
-        <div id="claude"><span class="loading">…</span></div>
+    <!-- TOP ROW: the three LLM usage/quota cards, one per column. Each is placed
+         explicitly (see .board in index.css) so hiding one leaves its slot empty
+         instead of pulling a column below up into the top row. -->
+    <div class="card" id="claude-card">
+      <div class="card-header">
+        <span class="card-title">Claude quota <span class="card-sub">via Headroom</span></span>
+        <div class="accent" style="background:var(--claude, #d97757)"></div>
       </div>
-      <div class="card" id="hdr-card">
-        <div class="card-header">
-          <span class="card-title">Headroom</span>
-          <div class="accent" style="background:var(--headroom)"></div>
-        </div>
-        <div id="hdr"><span class="loading">…</span></div>
+      <div id="claude"><span class="loading">…</span></div>
+    </div>
+    <div class="card" id="cursor-card">
+      <div class="card-header">
+        <span class="card-title">Cursor</span>
+        <div class="accent" style="background:var(--cursor)"></div>
       </div>
+      <div id="cur"><span class="loading">…</span></div>
+    </div>
+    <div class="card" id="antigravity-card">
+      <div class="card-header">
+        <span class="card-title">Antigravity <span class="card-sub">polled every 5 min · spawns agy</span></span>
+        <div class="accent" style="background:var(--antigravity)"></div>
+      </div>
+      <div id="agy"><span class="loading">…</span></div>
     </div>
 
-    <!-- MIDDLE: RTK on top, Caveman under -->
-    <div class="board-col">
+    <!-- UNDER, LEFT: RTK on top, Caveman under -->
+    <div class="board-col bcol-1">
       <div class="card" id="rtk-card">
         <div class="card-header">
           <span class="card-title">RTK</span>
@@ -94,8 +101,19 @@
       </div>
     </div>
 
-    <!-- RIGHT: trend graphs -->
-    <div class="board-col">
+    <!-- UNDER, MIDDLE: Headroom -->
+    <div class="board-col bcol-2">
+      <div class="card" id="hdr-card">
+        <div class="card-header">
+          <span class="card-title">Headroom</span>
+          <div class="accent" style="background:var(--headroom)"></div>
+        </div>
+        <div id="hdr"><span class="loading">…</span></div>
+      </div>
+    </div>
+
+    <!-- UNDER, RIGHT: trend graphs -->
+    <div class="board-col bcol-3">
       <div class="card graph-card" id="trends-card">
         <div class="card-header">
           <span class="card-title">Trends</span>
@@ -111,20 +129,6 @@
         <div class="divider"></div>
         <div class="hist-title">Cost over time <span>raw · real · saved ($)</span></div>
         <div class="hist-canvas"><canvas id="hc-cost"></canvas></div>
-      </div>
-      <div class="card" id="cursor-card">
-        <div class="card-header">
-          <span class="card-title">Cursor</span>
-          <div class="accent" style="background:var(--cursor)"></div>
-        </div>
-        <div id="cur"><span class="loading">…</span></div>
-      </div>
-      <div class="card" id="antigravity-card">
-        <div class="card-header">
-          <span class="card-title">Antigravity <span class="card-sub">polled every 5 min · spawns agy</span></span>
-          <div class="accent" style="background:var(--antigravity)"></div>
-        </div>
-        <div id="agy"><span class="loading">…</span></div>
       </div>
     </div>
   </div>
@@ -263,6 +267,7 @@
       <div class="modal-tabs" id="settings-tabs" role="tablist">
         <button class="modal-tab active" data-tab="sources" role="tab">Sources</button>
         <button class="modal-tab" data-tab="connections" role="tab">Connections</button>
+        <button class="modal-tab" data-tab="alerts" role="tab">Alerts</button>
         <button class="modal-tab" data-tab="pricing" role="tab">Pricing</button>
         <button class="modal-tab" data-tab="data" role="tab">Data</button>
       </div>
@@ -325,6 +330,37 @@
         <input type="text" id="set-headroom-health-url" placeholder="http://127.0.0.1:8787/health (empty to disable probe)">
       </div>
       </div><!-- /Tab: Connections -->
+
+      <!-- Tab: Alerts -->
+      <div class="tab-panel" data-panel="alerts">
+      <div style="margin-bottom: 16px;">
+        <label style="font-weight: 600; font-size: 14px;">Quota pacing alerts</label>
+        <div class="form-group-row" style="margin-top: 10px;">
+          <input type="checkbox" id="set-notify-enabled">
+          <label for="set-notify-enabled">Send a desktop notification when a quota bar burns through its pacing budget</label>
+        </div>
+        <div style="display: flex; gap: 14px; margin-top: 12px; flex-wrap: wrap;">
+          <div class="form-group" style="flex: 1; min-width: 150px;">
+            <label for="set-notify-warn">Warning threshold (% of budget)</label>
+            <input type="number" id="set-notify-warn" min="1" max="500" step="1" placeholder="80">
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 150px;">
+            <label for="set-notify-over">Over-budget threshold (% of budget)</label>
+            <input type="number" id="set-notify-over" min="1" max="500" step="1" placeholder="100">
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+          <button type="button" id="test-notification-btn" class="btn-cancel" style="padding: 6px 12px; font-size: 0.85rem;">Send test notification</button>
+          <span id="notify-status" style="font-size: 0.85rem; color: var(--muted);"></span>
+        </div>
+        <div style="font-size: 11px; opacity: 0.6; margin-top: 10px; line-height: 1.4;">
+          The budget is the pacing allowance shown under each quota bar (100% ÷ days in the window × the current day).
+          80% fires while you still have slack; 100% fires once usage passes the budget.
+          At most one alert per threshold per bar per day (per hour for the 5-hour session), re-armed when the next one starts.
+          Notifications come from this browser tab, so it must stay open — and the browser must have granted permission.
+        </div>
+      </div>
+      </div><!-- /Tab: Alerts -->
 
       <!-- Tab: Pricing -->
       <div class="tab-panel" data-panel="pricing">

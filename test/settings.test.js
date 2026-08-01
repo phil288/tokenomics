@@ -67,6 +67,32 @@ test('updateSettings stores an ANALYSIS_LAYOUT object, ignores non-objects', () 
   assert.deepEqual(updateSettings({ ANALYSIS_LAYOUT: 'nope' }).ANALYSIS_LAYOUT, layout);
 });
 
+test('pace alert settings default to off with 80/100 thresholds', () => {
+  const s = getSettings();
+  assert.equal(s.PACE_ALERTS_ENABLED, false);
+  assert.equal(s.PACE_ALERT_WARN_PCT, 80);
+  assert.equal(s.PACE_ALERT_OVER_PCT, 100);
+});
+
+test('updateSettings coerces the alert toggle and clamps the thresholds', () => {
+  const s = updateSettings({
+    PACE_ALERTS_ENABLED: 'true',
+    PACE_ALERT_WARN_PCT: '75.25',
+    PACE_ALERT_OVER_PCT: 900,
+  });
+  assert.equal(s.PACE_ALERTS_ENABLED, true);
+  assert.equal(s.PACE_ALERT_WARN_PCT, 75.3);
+  assert.equal(s.PACE_ALERT_OVER_PCT, 500);
+
+  // junk / non-positive values keep the previous value rather than persisting NaN
+  const kept = updateSettings({ PACE_ALERT_WARN_PCT: 'abc', PACE_ALERT_OVER_PCT: -1 });
+  assert.equal(kept.PACE_ALERT_WARN_PCT, 75.3);
+  assert.equal(kept.PACE_ALERT_OVER_PCT, 500);
+  assert.equal(readPersisted().PACE_ALERT_WARN_PCT, 75.3);
+
+  updateSettings({ PACE_ALERTS_ENABLED: false, PACE_ALERT_WARN_PCT: 80, PACE_ALERT_OVER_PCT: 100 });
+});
+
 test('updateSettings persists to disk', () => {
   updateSettings({ RTK_ENABLED: false, CURSOR_ACCESS_TOKEN: 'persisted' });
   const onDisk = readPersisted();

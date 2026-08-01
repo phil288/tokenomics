@@ -41,6 +41,12 @@ let settings = {
   // Headroom proxy health endpoint. Probed each refresh to show a live
   // up/down status pill on the Headroom card. Empty string disables the probe.
   HEADROOM_HEALTH_URL: 'http://127.0.0.1:8787/health',
+  // Desktop pacing alerts (browser Notification API, fired by the dashboard
+  // tab). Thresholds are a percentage OF THE PACING BUDGET, not of the quota:
+  // 80 → warn once the bar has used 80% of what it may have used by now.
+  PACE_ALERTS_ENABLED: false,
+  PACE_ALERT_WARN_PCT: 80,
+  PACE_ALERT_OVER_PCT: 100,
   PRICING: DEFAULT_PRICING,
   // Free-drag card layout: { "<card-id>": { x, y, w } } in px. Empty = native grid.
   CARD_LAYOUT: {},
@@ -77,8 +83,16 @@ function getSettings() {
   };
 }
 
+// Alert thresholds are user-typed: keep them a sane percentage or fall back to
+// the current value rather than persisting NaN/0/absurd numbers.
+function clampAlertPct(value, current) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return current;
+  return Math.min(500, Math.round(n * 10) / 10);
+}
+
 function updateSettings(parsed) {
-  for (const key of ['RTK_ENABLED', 'CAVEMAN_ENABLED', 'CLAUDE_ENABLED', 'HEADROOM_ENABLED', 'CURSOR_ENABLED', 'ANTIGRAVITY_ENABLED']) {
+  for (const key of ['RTK_ENABLED', 'CAVEMAN_ENABLED', 'CLAUDE_ENABLED', 'HEADROOM_ENABLED', 'CURSOR_ENABLED', 'ANTIGRAVITY_ENABLED', 'PACE_ALERTS_ENABLED']) {
     if (typeof parsed[key] === 'boolean') {
       settings[key] = parsed[key];
     } else if (parsed[key] !== undefined) {
@@ -99,6 +113,12 @@ function updateSettings(parsed) {
   }
   if (parsed.HEADROOM_SUBSCRIPTION_STATE_PATH !== undefined) {
     settings.HEADROOM_SUBSCRIPTION_STATE_PATH = parsed.HEADROOM_SUBSCRIPTION_STATE_PATH.trim();
+  }
+  if (parsed.PACE_ALERT_WARN_PCT !== undefined) {
+    settings.PACE_ALERT_WARN_PCT = clampAlertPct(parsed.PACE_ALERT_WARN_PCT, settings.PACE_ALERT_WARN_PCT);
+  }
+  if (parsed.PACE_ALERT_OVER_PCT !== undefined) {
+    settings.PACE_ALERT_OVER_PCT = clampAlertPct(parsed.PACE_ALERT_OVER_PCT, settings.PACE_ALERT_OVER_PCT);
   }
   if (Array.isArray(parsed.PRICING)) {
     settings.PRICING = parsed.PRICING;

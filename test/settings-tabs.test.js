@@ -11,7 +11,7 @@ const ROOT = path.join(__dirname, '..');
 const HTML = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const SETTINGS_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'settings.js'), 'utf8');
 
-const TABS = ['sources', 'connections', 'pricing', 'data'];
+const TABS = ['sources', 'connections', 'alerts', 'pricing', 'data'];
 
 // Inner HTML of one tab panel: from `data-panel="name">` to its `<!-- /Tab: -->`.
 function panelBody(name) {
@@ -52,6 +52,10 @@ test('each setting field lives in its expected panel', () => {
   inPanel('connections', 'cursor-token-status');
   inPanel('connections', 'set-rtk-home');
   inPanel('connections', 'set-headroom-health-url');
+  inPanel('alerts', 'set-notify-enabled');
+  inPanel('alerts', 'set-notify-warn');
+  inPanel('alerts', 'set-notify-over');
+  inPanel('alerts', 'test-notification-btn');
   inPanel('pricing', 'pricing-table-body');
   inPanel('pricing', 'btn-add-pricing-row');
   inPanel('data', 'reset-stats-btn');

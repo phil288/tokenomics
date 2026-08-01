@@ -109,12 +109,11 @@ function rate(v) {
   return String(Math.round(v * 10) / 10);
 }
 
-// Tick on the bar marking "how far you're allowed to be by now". Antigravity's
-// bars fill with REMAINING quota, so there the tick mirrors to 100 − budget.
-export function paceMarker(p, invert = false) {
+// Tick on the bar marking "how far you're allowed to be by now". Every quota bar
+// fills with USED %, so the tick sits at the budget itself.
+export function paceMarker(p) {
   if (!p) return '';
-  const pos = invert ? 100 - p.budgetPct : p.budgetPct;
-  const left = Math.max(0, Math.min(99.4, pos));
+  const left = Math.max(0, Math.min(99.4, p.budgetPct));
   return `<span class="pace-marker" style="left:${left.toFixed(2)}%" title="budget by now: ${pn(p.budgetPct)}%"></span>`;
 }
 

@@ -2,10 +2,12 @@ import { barColor, qpct, countdown, remainingTime, secsUntil } from './format.js
 import { userBreakdown } from './cards-common.js';
 import { headroomHealthPill } from './cards-headroom.js';
 import { computePace, paceMarker, paceNote, HOUR, DAY } from './pace.js';
+import { trackPace } from './notify.js';
 
 function quotaBar(label, pctVal, resetSecs, inlineNote = '', windowSecs = null) {
   const v = pctVal || 0;
   const pace = computePace({ usedPct: v, windowSecs, remainingSecs: resetSecs });
+  trackPace(`claude:${label}`, `Claude · ${label}`, pace);
   return `
     <div class="prog-group">
       <div class="prog-header">

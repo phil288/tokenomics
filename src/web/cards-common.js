@@ -1,6 +1,7 @@
 import { ht, usdFull } from './format.js';
 import { modelRaw, modelWeighted, modelUsd, modelUsdRaw } from './pricing.js';
 import { paceMarker, paceNote } from './pace.js';
+import { trackPace } from './notify.js';
 
 export function renderModels(byModel) {
   if (!byModel) return '';
@@ -50,10 +51,12 @@ export function renderModels(byModel) {
   `;
 }
 
-// `pace` (from computePace) is optional: when present the track gets a budget
-// tick and a pacing line under the sub-text. `paceInvert` is for bars that fill
-// with REMAINING quota instead of used.
-export function usageBar(label, pctVal, sub, color = 'var(--cursor)', mb = 12, pace = null, paceInvert = false) {
+// `paceOpts` is optional: `{ pace, key, alertLabel }`. With a pace the track
+// gets a budget tick and a pacing line under the sub-text; `key`/`alertLabel`
+// register the bar for desktop pacing alerts.
+export function usageBar(label, pctVal, sub, color = 'var(--cursor)', mb = 12, paceOpts = null) {
+  const { pace = null, key = null, alertLabel = label } = paceOpts || {};
+  if (key) trackPace(key, alertLabel, pace);
   return `
       <div class="prog-group" style="margin-bottom: ${mb}px;">
         <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
@@ -62,7 +65,7 @@ export function usageBar(label, pctVal, sub, color = 'var(--cursor)', mb = 12, p
         </div>
         <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
           <div class="fill" style="width:${Math.min(pctVal, 100)}%; background: ${color}; height: 100%; border-radius: 3px;"></div>
-          ${paceMarker(pace, paceInvert)}
+          ${paceMarker(pace)}
         </div>
         <div class="prog-sub" style="font-size: 11px; margin-top: 4px; ${sub.style}">${sub.text}</div>
         ${paceNote(pace)}

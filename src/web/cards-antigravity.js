@@ -2,12 +2,15 @@ import { usageBar } from './cards-common.js';
 import { computePace, parseDuration, windowSecsFromLabel } from './pace.js';
 
 // ---- Antigravity usage by model group ----
-// agy's /usage gauge is REMAINING quota, so the bar shows remaining % directly
-// (100% = full quota available). The sub-line carries the reset countdown.
+// agy's /usage gauge reports REMAINING quota, but the card shows USED % so every
+// quota bar on the dashboard fills the same way (0 → 100 as you consume), like
+// Claude and Cursor. The sub-line carries the reset countdown.
 function agyLimitSub(lim) {
   if (!lim) return { style: 'opacity:0.6;', text: '—' };
-  if (lim.full) return { style: 'opacity:0.8;', text: 'Quota available' };
-  return { style: 'opacity:0.8;', text: lim.refresh ? `Refreshes in ${lim.refresh}` : 'remaining' };
+  // `full` = agy's "Quota available", i.e. nothing consumed yet — with a used-%
+  // bar the honest label is the metric itself.
+  if (lim.full) return { style: 'opacity:0.8;', text: 'quota used' };
+  return { style: 'opacity:0.8;', text: lim.refresh ? `Refreshes in ${lim.refresh}` : 'quota used' };
 }
 
 // "GEMINI MODELS" → "Gemini", "CLAUDE AND GPT MODELS" → "Claude & GPT"
@@ -35,13 +38,13 @@ export function renderAntigravity(d) {
     return `<div class="loading">Fetching usage… first poll runs in the background (spawns agy).</div>`;
   }
 
-  const remPct = lim => lim ? (lim.full ? 100 : (lim.remainingPct || 0)) : 0;
-  // agy reports remaining quota + a rendered "Refreshes in …" string; the pacing
-  // budget needs used% and seconds-left, and the window length comes from the
-  // limit's own label ("Weekly" → 7d). An untouched ("Quota available") limit
-  // has no refresh string, so it gets no pace line.
+  // agy's gauge is remaining quota; flip it so the bar grows with consumption.
+  const usedPct = lim => lim ? (lim.full ? 0 : 100 - (lim.remainingPct || 0)) : 0;
+  // The window length comes from the limit's own label ("Weekly" → 7d) and the
+  // seconds left from the rendered "Refreshes in …" string. An untouched
+  // ("Quota available") limit has no refresh string, so it gets no pace line.
   const limPace = lim => computePace({
-    usedPct: 100 - remPct(lim),
+    usedPct: usedPct(lim),
     windowSecs: windowSecsFromLabel(lim && lim.label),
     remainingSecs: parseDuration(lim && lim.refresh),
   });
@@ -59,7 +62,12 @@ export function renderAntigravity(d) {
     const limits = g.limits || [];
     limits.forEach((lim, i) => {
       const mb = i === limits.length - 1 ? 16 : 10; // extra gap after the last bar
-      html += usageBar(agyLimitLabel(lim.label), remPct(lim), agyLimitSub(lim), 'var(--antigravity)', mb, limPace(lim), true);
+      const title = agyGroupTitle(g.name);
+      html += usageBar(agyLimitLabel(lim.label), usedPct(lim), agyLimitSub(lim), 'var(--antigravity)', mb, {
+        pace: limPace(lim),
+        key: `agy:${g.name}:${lim.label}`,
+        alertLabel: `Antigravity · ${title} ${agyLimitLabel(lim.label)}`,
+      });
     });
   }
 
