@@ -1167,8 +1167,16 @@ header h1 span {
   color: var(--text);
 }
 
+.form-group-row label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
 .form-group input[type="text"],
-.form-group input[type="password"] {
+.form-group input[type="password"],
+.form-group input[type="number"] {
   background: var(--card-2);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1179,14 +1187,17 @@ header h1 span {
 }
 
 .form-group input[type="text"]:focus,
-.form-group input[type="password"]:focus {
+.form-group input[type="password"]:focus,
+.form-group input[type="number"]:focus {
   outline: none;
   border-color: var(--rtk);
 }
 
-.form-group input[type="checkbox"] {
+.form-group input[type="checkbox"],
+.form-group-row input[type="checkbox"] {
   width: 16px;
   height: 16px;
+  flex: none;
   cursor: pointer;
   accent-color: var(--rtk);
 }

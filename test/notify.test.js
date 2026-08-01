@@ -181,3 +181,13 @@ test('the settings modal owns an Alerts tab wired to the notifier', () => {
   assert.match(js, /if \(config\) applyPaceAlertSettings\(config\)/);
   assert.match(js, /resetPaceAlerts\(\);\s*\n\s*applyPaceAlertSettings\(result\.settings\)/);
 });
+
+test('the threshold fields and the toggle inherit the modal form styling', () => {
+  // The thresholds are number inputs and the toggle sits in a .form-group-row;
+  // both were unstyled (white boxes / oversized label) until the CSS covered them.
+  const css = read('index.css');
+  assert.match(css, /\.form-group input\[type="number"\] \{/);
+  assert.match(css, /\.form-group input\[type="number"\]:focus/);
+  assert.match(css, /\.form-group-row input\[type="checkbox"\] \{/);
+  assert.match(css, /\.form-group-row label \{/);
+});
