@@ -1,17 +1,20 @@
 import { barColor, qpct, countdown, remainingTime, secsUntil } from './format.js';
 import { userBreakdown } from './cards-common.js';
 import { headroomHealthPill } from './cards-headroom.js';
+import { computePace, paceMarker, paceNote, HOUR, DAY } from './pace.js';
 
-function quotaBar(label, pctVal, resetSecs, inlineNote = '') {
+function quotaBar(label, pctVal, resetSecs, inlineNote = '', windowSecs = null) {
   const v = pctVal || 0;
+  const pace = computePace({ usedPct: v, windowSecs, remainingSecs: resetSecs });
   return `
     <div class="prog-group">
       <div class="prog-header">
         <span class="prog-label">${label}${inlineNote ? ` <span class="prog-note">${inlineNote}</span>` : ''}</span>
         <span class="prog-pct" style="color:${barColor(v)}">${qpct(v)}%</span>
       </div>
-      <div class="track"><div class="fill" style="width:${Math.min(v, 100)}%;background:${barColor(v)}"></div></div>
+      <div class="track"><div class="fill" style="width:${Math.min(v, 100)}%;background:${barColor(v)}"></div>${paceMarker(pace)}</div>
       ${resetSecs != null ? `<div class="prog-sub">${countdown(resetSecs)}</div>` : ''}
+      ${paceNote(pace)}
     </div>`;
 }
 
@@ -71,9 +74,9 @@ export function renderClaude(d) {
   }
   const sessionSecs = sessionResetSecs(fh);
   return `
-    ${quotaBar('Current session (5h)', fh.utilization_pct, sessionSecs, remainingTime(sessionSecs))}
-    ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, quotaResetSecs(sd))}
-    ${modelWindows.map(m => quotaBar(`Weekly · ${m.label} (7d)`, m.win.utilization_pct, quotaResetSecs(m.win))).join('')}
+    ${quotaBar('Current session (5h)', fh.utilization_pct, sessionSecs, remainingTime(sessionSecs), 5 * HOUR)}
+    ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, quotaResetSecs(sd), '', 7 * DAY)}
+    ${modelWindows.map(m => quotaBar(`Weekly · ${m.label} (7d)`, m.win.utilization_pct, quotaResetSecs(m.win), '', 7 * DAY)).join('')}
     <div class="rows">${userBreakdown(d.users || [], 'claude')}</div>
   `;
 }

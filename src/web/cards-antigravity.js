@@ -1,4 +1,5 @@
 import { usageBar } from './cards-common.js';
+import { computePace, parseDuration, windowSecsFromLabel } from './pace.js';
 
 // ---- Antigravity usage by model group ----
 // agy's /usage gauge is REMAINING quota, so the bar shows remaining % directly
@@ -35,6 +36,15 @@ export function renderAntigravity(d) {
   }
 
   const remPct = lim => lim ? (lim.full ? 100 : (lim.remainingPct || 0)) : 0;
+  // agy reports remaining quota + a rendered "Refreshes in …" string; the pacing
+  // budget needs used% and seconds-left, and the window length comes from the
+  // limit's own label ("Weekly" → 7d). An untouched ("Quota available") limit
+  // has no refresh string, so it gets no pace line.
+  const limPace = lim => computePace({
+    usedPct: 100 - remPct(lim),
+    windowSecs: windowSecsFromLabel(lim && lim.label),
+    remainingSecs: parseDuration(lim && lim.refresh),
+  });
   let html = '';
   if (d.account) html += `<div class="prog-sub" style="opacity:0.7; margin-bottom:10px;">${d.account}</div>`;
 
@@ -49,7 +59,7 @@ export function renderAntigravity(d) {
     const limits = g.limits || [];
     limits.forEach((lim, i) => {
       const mb = i === limits.length - 1 ? 16 : 10; // extra gap after the last bar
-      html += usageBar(agyLimitLabel(lim.label), remPct(lim), agyLimitSub(lim), 'var(--antigravity)', mb);
+      html += usageBar(agyLimitLabel(lim.label), remPct(lim), agyLimitSub(lim), 'var(--antigravity)', mb, limPace(lim), true);
     });
   }
 

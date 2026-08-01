@@ -1,5 +1,6 @@
 import { ht, usdFull } from './format.js';
 import { modelRaw, modelWeighted, modelUsd, modelUsdRaw } from './pricing.js';
+import { paceMarker, paceNote } from './pace.js';
 
 export function renderModels(byModel) {
   if (!byModel) return '';
@@ -49,7 +50,10 @@ export function renderModels(byModel) {
   `;
 }
 
-export function usageBar(label, pctVal, sub, color = 'var(--cursor)', mb = 12) {
+// `pace` (from computePace) is optional: when present the track gets a budget
+// tick and a pacing line under the sub-text. `paceInvert` is for bars that fill
+// with REMAINING quota instead of used.
+export function usageBar(label, pctVal, sub, color = 'var(--cursor)', mb = 12, pace = null, paceInvert = false) {
   return `
       <div class="prog-group" style="margin-bottom: ${mb}px;">
         <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
@@ -58,8 +62,10 @@ export function usageBar(label, pctVal, sub, color = 'var(--cursor)', mb = 12) {
         </div>
         <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
           <div class="fill" style="width:${Math.min(pctVal, 100)}%; background: ${color}; height: 100%; border-radius: 3px;"></div>
+          ${paceMarker(pace, paceInvert)}
         </div>
         <div class="prog-sub" style="font-size: 11px; margin-top: 4px; ${sub.style}">${sub.text}</div>
+        ${paceNote(pace)}
       </div>`;
 }
 

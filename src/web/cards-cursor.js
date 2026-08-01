@@ -1,28 +1,45 @@
 import { usageBar } from './cards-common.js';
+import { computePace, monthlyCycle } from './pace.js';
 
-function cursorBar(label, pctVal, sub, mb = 12) {
-  return usageBar(label, pctVal, sub, 'var(--cursor)', mb);
+function cursorBar(label, pctVal, sub, mb = 12, pace = null) {
+  return usageBar(label, pctVal, sub, 'var(--cursor)', mb, pace);
+}
+
+// Cursor's quota resets with the billing cycle; the API only gives its start,
+// so the current cycle is the monthly anniversary window containing now.
+function cursorCycleStartMs(d) {
+  const raw = d.subscriptionCycleStart || (d.billingCycle && d.billingCycle.cycleStart);
+  if (!raw) return null;
+  const ms = new Date(isNaN(raw) ? raw : parseInt(raw)).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function cursorPace(cycle, usedPct) {
+  if (!cycle) return null;
+  return computePace({ usedPct, windowSecs: cycle.windowSecs, remainingSecs: cycle.remainingSecs });
 }
 
 const CURSOR_SUB_AUTO = { style: 'opacity: 0.6; line-height: 1.3;', text: 'Additional usage beyond limits consumes API quota or on-demand spend.' };
 const CURSOR_SUB_API = { style: 'opacity: 0.6; line-height: 1.3;', text: 'Additional usage beyond limits consumes on-demand spend. Your plan includes at least $20 of API usage.' };
 const cursorTotalSub = (autoPct, apiPct) => ({ style: 'opacity: 0.8;', text: `${Math.round(autoPct)}% Auto and ${Math.round(apiPct)}% API used` });
 
-function cursorBars(totalPct, autoPct, apiPct) {
+function cursorBars(totalPct, autoPct, apiPct, cycle = null) {
   return `
-      ${cursorBar('Total', totalPct, cursorTotalSub(autoPct, apiPct))}
-      ${cursorBar('Auto + Composer', autoPct, CURSOR_SUB_AUTO)}
-      ${cursorBar('API', apiPct, CURSOR_SUB_API, 16)}`;
+      ${cursorBar('Total', totalPct, cursorTotalSub(autoPct, apiPct), 12, cursorPace(cycle, totalPct))}
+      ${cursorBar('Auto + Composer', autoPct, CURSOR_SUB_AUTO, 12, cursorPace(cycle, autoPct))}
+      ${cursorBar('API', apiPct, CURSOR_SUB_API, 16, cursorPace(cycle, apiPct))}`;
 }
 
 export function renderCursor(d) {
   if (!d || d.error) return `<div class="err">${d && d.error ? d.error : 'No Cursor data'}</div>`;
 
+  const cycle = monthlyCycle(cursorCycleStartMs(d));
+
   if (d.planUsage) {
     const autoPct = d.planUsage.autoPercentUsed || 0;
     const apiPct = d.planUsage.apiPercentUsed || 0;
     const totalPct = Math.max(autoPct, apiPct);
-    return cursorBars(totalPct, autoPct, apiPct);
+    return cursorBars(totalPct, autoPct, apiPct, cycle);
   }
 
   const members = d.teamMemberSpend || (d.group && d.group.members) || [];
@@ -64,7 +81,7 @@ export function renderCursor(d) {
   const formatNum = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n;
 
   return `
-    ${cursorBars(totalPct, autoPct, apiPct)}
+    ${cursorBars(totalPct, autoPct, apiPct, cycle)}
 
     <div class="divider" style="margin: 12px 0 12px 0;"></div>
 

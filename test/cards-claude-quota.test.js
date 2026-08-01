@@ -37,7 +37,7 @@ test('renderClaude renders one bar per discovered model window, labeled from the
 test('renderClaude shows current-session remaining time inline', () => {
   assert.match(CLAUDE_CARDS_JS, /import \{[^}]*remainingTime[^}]*\} from '\.\/format\.js'/);
   assert.match(CLAUDE_CARDS_JS, /const sessionSecs = sessionResetSecs\(fh\)/);
-  assert.match(CLAUDE_CARDS_JS, /quotaBar\('Current session \(5h\)', fh\.utilization_pct, sessionSecs, remainingTime\(sessionSecs\)\)/);
+  assert.match(CLAUDE_CARDS_JS, /quotaBar\('Current session \(5h\)', fh\.utilization_pct, sessionSecs, remainingTime\(sessionSecs\)/);
 });
 
 test('quota reset timing accepts timestamp and seconds_to_reset window fields', () => {
@@ -45,7 +45,7 @@ test('quota reset timing accepts timestamp and seconds_to_reset window fields', 
   assert.match(CLAUDE_CARDS_JS, /const resetAt = win\.resets_at \|\| win\.reset_at \|\| win\.resetAt/);
   assert.match(CLAUDE_CARDS_JS, /secsUntil\(resetAt\)/);
   assert.match(CLAUDE_CARDS_JS, /Number\.isFinite\(win\.seconds_to_reset\)/);
-  assert.match(CLAUDE_CARDS_JS, /quotaBar\('Weekly · all models \(7d\)', sd\.utilization_pct, quotaResetSecs\(sd\)\)/);
+  assert.match(CLAUDE_CARDS_JS, /quotaBar\('Weekly · all models \(7d\)', sd\.utilization_pct, quotaResetSecs\(sd\)/);
 });
 
 test('current session only shows a countdown from valid Headroom timing', () => {
