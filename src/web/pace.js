@@ -39,6 +39,10 @@ export function computePace({ usedPct, windowSecs, remainingSecs }) {
     usedPct: used,
     spare: budgetPct - used,
     over: used > budgetPct,
+    // kept so callers can identify *which* window instance this is (notify.js
+    // dedupes per window, not per day-number — day 3 of next week is new)
+    windowSecs,
+    remainingSecs: Math.min(windowSecs, remainingSecs),
     // straight-line extrapolation of the current burn rate to the window end
     projectedPct: elapsedFrac > 0 ? used / elapsedFrac : null,
     elapsedFrac,

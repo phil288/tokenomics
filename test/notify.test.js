@@ -30,12 +30,27 @@ class FakeNotification {
 }
 globalThis.Notification = FakeNotification;
 
+// Minimal localStorage stand-in — the dedupe state is mirrored into it so a
+// page reload doesn't replay alerts.
+const fakeStorage = () => {
+  const m = new Map();
+  return {
+    getItem: k => (m.has(k) ? m.get(k) : null),
+    setItem: (k, v) => m.set(k, String(v)),
+    removeItem: k => m.delete(k),
+    _map: m,
+  };
+};
+globalThis.localStorage = fakeStorage();
+
 // A weekly bar on day 3 → budget 42.86%.
 const weekly = usedPct => computePace({ usedPct, windowSecs: 7 * DAY, remainingSecs: 4 * DAY + 11 * HOUR });
+const NOW = Date.UTC(2026, 7, 1, 9, 0, 0);
 
 beforeEach(() => {
   sent = [];
   FakeNotification.permission = 'granted';
+  globalThis.localStorage = fakeStorage();
   notify.resetPaceAlerts();
   notify.setPaceAlertConfig({ enabled: true, warnPct: 80, overPct: 100 });
 });
@@ -82,11 +97,50 @@ test('an over-budget alert consumes the warning slot for that unit', () => {
 });
 
 test('alerts re-arm when the window advances to the next unit', () => {
-  notify.trackPace('k', 'Bar', weekly(35));
+  notify.trackPace('k', 'Bar', weekly(35), NOW);
   const day4 = computePace({ usedPct: 48, windowSecs: 7 * DAY, remainingSecs: 3 * DAY + 11 * HOUR });
   assert.equal(day4.index, 4);
-  assert.equal(notify.trackPace('k', 'Bar', day4).level, 'warn'); // 84% of a 57.1% budget
+  // one day later in wall-clock time, one day less remaining
+  assert.equal(notify.trackPace('k', 'Bar', day4, NOW + DAY * 1000).level, 'warn');
   assert.equal(sent.length, 2);
+});
+
+test('the same day of the NEXT window is a new event', () => {
+  notify.trackPace('k', 'Bar', weekly(35), NOW);
+  // a week later: same day-3-of-7 position, different window instance
+  const nextWeek = NOW + 7 * DAY * 1000;
+  assert.equal(notify.trackPace('k', 'Bar', weekly(35), nextWeek).level, 'warn');
+  assert.equal(sent.length, 2);
+});
+
+test('a page reload does not replay an alert already sent', () => {
+  notify.trackPace('k', 'Bar', weekly(35), NOW);
+  assert.equal(sent.length, 1);
+
+  // reload = a fresh module instance against the same localStorage
+  const reloaded = load(read('src/web/notify.js'), ['setPaceAlertConfig', 'trackPace', 'resetPaceAlerts']);
+  reloaded.setPaceAlertConfig({ enabled: true, warnPct: 80, overPct: 100 });
+  assert.equal(reloaded.trackPace('k', 'Bar', weekly(36), NOW + 60_000), null);
+  assert.equal(sent.length, 1);
+  // …but a genuinely new event still gets through after the reload
+  assert.equal(reloaded.trackPace('k', 'Bar', weekly(50), NOW + 120_000).level, 'over');
+  assert.equal(sent.length, 2);
+});
+
+test('alerts still work when localStorage is unavailable', () => {
+  const saved = globalThis.localStorage;
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() { throw new Error('blocked'); },
+  });
+  try {
+    const iso = load(read('src/web/notify.js'), ['setPaceAlertConfig', 'trackPace']);
+    iso.setPaceAlertConfig({ enabled: true, warnPct: 80, overPct: 100 });
+    assert.equal(iso.trackPace('k', 'Bar', weekly(35), NOW).level, 'warn');
+    assert.equal(iso.trackPace('k', 'Bar', weekly(35), NOW), null); // in-memory dedupe still holds
+  } finally {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: saved });
+  }
 });
 
 test('bars are tracked independently by key', () => {
@@ -179,7 +233,9 @@ test('the settings modal owns an Alerts tab wired to the notifier', () => {
   // both at boot and after a save
   assert.match(js, /notifyEnabledCb\.addEventListener\('change'[\s\S]*?requestNotificationPermission\(\)/);
   assert.match(js, /if \(config\) applyPaceAlertSettings\(config\)/);
-  assert.match(js, /resetPaceAlerts\(\);\s*\n\s*applyPaceAlertSettings\(result\.settings\)/);
+  // an unrelated save (pricing, paths) must not re-arm and replay alerts
+  assert.match(js, /if \(before\.enabled !== after\.enabled \|\| before\.warnPct !== after\.warnPct/);
+  assert.match(js, /resetPaceAlerts\(\);/);
 });
 
 test('the threshold fields and the toggle inherit the modal form styling', () => {

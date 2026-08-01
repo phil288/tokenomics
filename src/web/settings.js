@@ -4,7 +4,7 @@ import { setCardLayout, hasSavedLayout, applyLayout, setAnalysisLayout } from '.
 import { manualRefresh } from './main.js';
 import { fetchHistory } from './charts.js';
 import {
-  setPaceAlertConfig, requestNotificationPermission, notificationPermission,
+  setPaceAlertConfig, paceAlertConfig, requestNotificationPermission, notificationPermission,
   notificationsSupported, sendTestNotification, resetPaceAlerts
 } from './notify.js';
 
@@ -360,10 +360,16 @@ export function initSettings() {
           result.settings.PRICING.forEach(item => PRICING.push(item));
         }
         if (result.settings) {
-          // New thresholds re-arm every bar, so a lowered threshold alerts on
-          // the current unit instead of waiting for the next day/hour.
-          resetPaceAlerts();
+          const before = paceAlertConfig();
           applyPaceAlertSettings(result.settings);
+          const after = paceAlertConfig();
+          // Changed thresholds re-arm every bar, so a lowered threshold alerts
+          // on the current unit instead of waiting for the next day/hour. An
+          // unrelated save (pricing, paths) must NOT replay alerts already seen.
+          if (before.enabled !== after.enabled || before.warnPct !== after.warnPct
+              || before.overPct !== after.overPct) {
+            resetPaceAlerts();
+          }
         }
         closeModal();
         manualRefresh();
