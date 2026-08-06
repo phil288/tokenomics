@@ -42,18 +42,22 @@ function parseAgyUsage(raw) {
       groups.push(g); cur = null; continue;
     }
     if ((m = s.match(/^Models within this group:\s*(.+)$/))) { if (g) g.models = m[1].trim(); continue; }
-    // any "<label> Limit" header opens a new limit section (e.g. "Weekly Limit",
-    // "Five Hour Limit"). Anchored + capital "Limit" so the descriptive footer
-    // ("…share a weekly limit.") doesn't match.
-    if (g && (m = s.match(/^(.+?)\s+Limit$/))) {
+    // any "<label> Limit" / "<label> Limit Remaining" header opens a new limit
+    // section (e.g. "Weekly Limit", "Weekly Limit Remaining"). Anchored + capital
+    // "Limit" so the descriptive footer ("…share a weekly limit.") doesn't match.
+    // agy ≥1.1.10 renamed "Weekly Limit" → "Weekly Limit Remaining".
+    if (g && (m = s.match(/^(.+?)\s+Limit(?:\s+Remaining)?$/))) {
       cur = { label: m[1].trim(), remainingPct: null, refresh: null, full: false };
       g.limits.push(cur); continue;
     }
     if (g && cur) {
       // gauge line: "[████…] 72.42%" — anchored on the bar bracket so the
-      // "72% remaining" status line below doesn't clobber the precise value.
+      // "72% remaining" / "79% remaining · Refreshes in …" status line below
+      // doesn't clobber the precise value.
       if ((m = s.match(/\]\s*([\d.]+)%/))) { cur.remainingPct = parseFloat(m[1]); continue; }
       if (/Quota available/i.test(s)) { cur.full = true; cur = null; continue; }
+      // refresh may be its own line ("Refreshes in 3d 4h") or trailing a status
+      // line ("79% remaining · Refreshes in 142h 43m").
       if ((m = s.match(/Refreshes in\s+(.+?)\s*$/))) { cur.refresh = m[1].trim(); cur = null; continue; }
     }
   }

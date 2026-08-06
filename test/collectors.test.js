@@ -158,6 +158,57 @@ test('parseAgyUsage returns an error object for unparseable input', () => {
   assert.equal(r.groups, undefined);
 });
 
+// agy ≥1.1.10 renamed limit headers ("Weekly Limit" → "Weekly Limit Remaining")
+// and folded the refresh into the status line ("79% remaining · Refreshes in …").
+// Groups+models without limits was the live failure mode (card showed titles, no bars).
+const AGY_PANEL_V1110 = `
+Account: dev@scinops.com
+
+GEMINI MODELS
+  Models within this group: Gemini Flash, Gemini Pro
+
+  Weekly Limit Remaining
+    [████████████████████████████████████████░░░░░░░░░░] 79.48%
+    79% remaining · Refreshes in 142h 43m
+
+CLAUDE AND GPT MODELS
+  Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
+
+  Weekly Limit Remaining
+    [██████████████████████████████████████████████░░░░] 91.58%
+    92% remaining · Refreshes in 149h 49m
+
+  │Within each group, models share a weekly limit. Quota is consumed
+  │proportionally to the cost of the tokens.
+`;
+
+test('parseAgyUsage accepts Limit Remaining headers (agy ≥1.1.10)', () => {
+  const r = parseAgyUsage(AGY_PANEL_V1110);
+  assert.equal(r.account, 'dev@scinops.com');
+  assert.equal(r.groups.length, 2);
+  assert.equal(r.groups[0].models, 'Gemini Flash, Gemini Pro');
+  assert.equal(r.groups[1].models, 'Claude Opus, Claude Sonnet, GPT-OSS');
+
+  const [gemini, claude] = r.groups;
+  assert.equal(gemini.limits.length, 1, 'empty limits[] was the live bug');
+  assert.equal(gemini.limits[0].label, 'Weekly');
+  assert.equal(gemini.limits[0].remainingPct, 79.48);
+  assert.equal(gemini.limits[0].refresh, '142h 43m');
+  assert.equal(gemini.limits[0].full, false);
+
+  assert.equal(claude.limits.length, 1);
+  assert.equal(claude.limits[0].label, 'Weekly');
+  assert.equal(claude.limits[0].remainingPct, 91.58);
+  assert.equal(claude.limits[0].refresh, '149h 49m');
+});
+
+test('parseAgyUsage still accepts legacy Limit headers without Remaining', () => {
+  // AGY_PANEL (above) is the pre-1.1.10 shape — still must parse.
+  const [gemini] = parseAgyUsage(AGY_PANEL).groups;
+  assert.deepEqual(gemini.limits.map(l => l.label), ['Weekly', 'Five Hour']);
+  assert.equal(gemini.limits[0].remainingPct, 72.42);
+});
+
 // ---- Activity feed: per-operation before→after records ----
 
 test('parseProxyPerfLine extracts tokens + per-request metadata from a PERF line', () => {
