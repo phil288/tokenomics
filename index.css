@@ -428,6 +428,23 @@ header h1 span {
   font-variant-numeric: tabular-nums;
 }
 
+/* When the quota numbers were last polled from Anthropic (not when the
+   dashboard last refreshed) — see polledFreshness() in cards-claude.js. */
+.poll-age {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.poll-age.warn { color: var(--warn); }
+
+.poll-age.stale,
+.poll-age.unknown {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .prog-sub {
   font-size: 13px;
   color: var(--muted);

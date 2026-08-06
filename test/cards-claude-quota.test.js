@@ -70,3 +70,58 @@ test('clock-derived Claude quota text refreshes once per second between SSE fram
   assert.match(MAIN_JS, /renderClaude\(state\.lastStats\.headroom\)/);
   assert.match(MAIN_JS, /setInterval\(clockTick, 1000\)/);
 });
+
+// The card shows when the quota numbers were last read *from Anthropic*
+// (Headroom's `latest.polled_at`), not when the dashboard last refreshed —
+// otherwise a dead proxy leaves stale bars looking live.
+const CSS = fs.readFileSync(path.join(ROOT, 'index.css'), 'utf8');
+
+// Load the real polledFreshness (+ its thresholds) by stripping ES module
+// syntax, same trick the pace tests use — the package is CommonJS.
+function loadFreshness() {
+  const src = CLAUDE_CARDS_JS
+    .replace(/^import .*$/gm, '')
+    .replace(/^export /gm, '');
+  const factory = new Function('timeAgo', `${src}\nreturn { polledFreshness, POLL_WARN_SECS, POLL_STALE_SECS };`);
+  return factory(() => 'X ago');
+}
+
+test('polledFreshness reports the Anthropic poll time, tiered by staleness', () => {
+  const { polledFreshness, POLL_WARN_SECS, POLL_STALE_SECS } = loadFreshness();
+  assert.equal(POLL_WARN_SECS, 5 * 60);
+  assert.equal(POLL_STALE_SECS, 30 * 60);
+
+  const at = secs => new Date(Date.now() - secs * 1000).toISOString();
+
+  assert.match(polledFreshness(at(10)), /class="poll-age fresh"/);
+  assert.match(polledFreshness(at(POLL_WARN_SECS - 5)), /class="poll-age fresh"/);
+  assert.match(polledFreshness(at(POLL_WARN_SECS + 5)), /class="poll-age warn"/);
+  assert.match(polledFreshness(at(POLL_STALE_SECS + 5)), /class="poll-age stale"/);
+
+  // Text carries the relative age plus an absolute timestamp on hover.
+  assert.match(polledFreshness(at(10)), /Updated X ago/);
+  assert.match(polledFreshness(at(10)), /title="Last polled from Anthropic: /);
+});
+
+test('polledFreshness degrades safely when Headroom sent no poll timestamp', () => {
+  const { polledFreshness } = loadFreshness();
+  for (const bad of [undefined, null, '', 'not-a-date']) {
+    const html = polledFreshness(bad);
+    assert.match(html, /class="poll-age unknown"/);
+    assert.match(html, /Quota age unknown/);
+    assert.doesNotMatch(html, /NaN|Invalid Date/);
+  }
+});
+
+test('both Claude render paths show the poll age, sourced from latest.polled_at', () => {
+  // Quota bars present...
+  assert.match(CLAUDE_CARDS_JS, /\$\{polledFreshness\(lt\.polled_at\)\}\s*\n\s*\$\{quotaBar\('Current session \(5h\)'/);
+  // ...and the "poll pending / Headroom unreachable" fallback.
+  assert.match(CLAUDE_CARDS_JS, /class="\$\{online \? 'note' : 'err'\}">\$\{msg\}<\/div>\s*\n\s*\$\{polledFreshness\(lt\.polled_at\)\}/);
+});
+
+test('poll-age styling is theme-aware and flags staleness', () => {
+  assert.match(CSS, /\.poll-age\s*{[^}]*var\(--muted\)/);
+  assert.match(CSS, /\.poll-age\.warn\s*{[^}]*var\(--warn\)/);
+  assert.match(CSS, /\.poll-age\.stale[\s\S]{0,40}\.poll-age\.unknown\s*{[^}]*var\(--danger\)/);
+});
