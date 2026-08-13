@@ -49,10 +49,29 @@ export function computePace({ usedPct, windowSecs, remainingSecs }) {
   };
 }
 
+// Cursor (and similar) send timestamps as ms, ms-strings, unix seconds, or ISO.
+// Values below 1e12 are treated as seconds — a ms timestamp in 2001+ is ≥ 1e12.
+export function parseEpochMs(raw) {
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+    return raw < 1e12 ? raw * 1000 : raw;
+  }
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const n = Number(s);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n < 1e12 ? n * 1000 : n;
+  }
+  const ms = Date.parse(s);
+  return Number.isNaN(ms) ? null : ms;
+}
+
 // Monthly billing cycle (Cursor): walk the anniversary of `startMs` forward
 // until it lands after `now`, giving the current cycle's length + remaining.
 export function monthlyCycle(startMs, now = Date.now()) {
-  const start = Number(startMs);
+  const start = parseEpochMs(startMs);
   if (!Number.isFinite(start) || start <= 0) return null;
   const d = new Date(start);
   if (Number.isNaN(d.getTime())) return null;
@@ -70,6 +89,30 @@ export function monthlyCycle(startMs, now = Date.now()) {
     windowSecs: (to.getTime() - from.getTime()) / 1000,
     remainingSecs: Math.max(0, (to.getTime() - now) / 1000),
   };
+}
+
+// Prefer an explicit start→renewal range (GetCurrentPeriodUsage.billingCycleStart
+// / billingCycleEnd). Fall back to walking the start's monthly anniversary.
+export function cycleFromRange(startMs, endMs, now = Date.now()) {
+  const start = parseEpochMs(startMs);
+  const end = parseEpochMs(endMs);
+  if (start && end && end > start && end > now) {
+    return {
+      windowSecs: (end - start) / 1000,
+      remainingSecs: (end - now) / 1000,
+    };
+  }
+  // Renewal date only: the cycle started one month before the reset.
+  if (!start && end && end > now) {
+    const to = new Date(end);
+    const from = new Date(to);
+    from.setUTCMonth(from.getUTCMonth() - 1);
+    return {
+      windowSecs: (to.getTime() - from.getTime()) / 1000,
+      remainingSecs: (to.getTime() - now) / 1000,
+    };
+  }
+  return monthlyCycle(start, now);
 }
 
 // "101h 16m" / "4d 11h" / "16m" / "2 days" → seconds. Antigravity only gives

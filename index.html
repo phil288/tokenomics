@@ -366,6 +366,9 @@
       <div class="tab-panel" data-panel="pricing">
       <div>
         <label style="font-weight: 600; font-size: 14px;">Dynamic Model Pricing (USD per million tokens)</label>
+        <div style="font-size: 11px; opacity: 0.6; margin-top: 6px; margin-bottom: 8px; line-height: 1.4;">
+          Output and cache rates follow Input. Use Refresh rates to recompute every row from its Input and prefix. Claude/Cursor output is 5×; Gemini/Antigravity is 6×. Cache read 0.1×, 5-minute write 1.25×, 1-hour write 2×. You can still override a derived cell before saving.
+        </div>
         <div class="pricing-table-container">
           <table class="pricing-table">
             <thead>
@@ -384,7 +387,8 @@
             </tbody>
           </table>
           <div class="table-actions">
-            <button class="btn-add" id="btn-add-pricing-row">+ Add Model Pricing</button>
+            <button type="button" class="btn-add" id="btn-refresh-pricing">↻ Refresh rates</button>
+            <button type="button" class="btn-add" id="btn-add-pricing-row">+ Add Model Pricing</button>
           </div>
         </div>
       </div>

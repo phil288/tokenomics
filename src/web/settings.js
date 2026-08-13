@@ -1,5 +1,5 @@
 // ============ SETTINGS MODAL & LOGIC ============
-import { PRICING } from './pricing.js';
+import { PRICING, derivePricingRates } from './pricing.js';
 import { setCardLayout, hasSavedLayout, applyLayout, setAnalysisLayout } from './layout.js';
 import { manualRefresh } from './main.js';
 import { fetchHistory } from './charts.js';
@@ -54,6 +54,10 @@ function resetCursorTokenReveal() {
   if (status) status.textContent = '';
 }
 
+function setCursorConnVisible(on) {
+  if (cursorTokenGroup) cursorTokenGroup.style.display = on ? 'flex' : 'none';
+}
+
 // Lightweight, non-blocking toast for action feedback (success / failure).
 let toastTimer = null;
 function showToast(msg, ok = true) {
@@ -75,7 +79,7 @@ async function loadSettingsUI() {
     const config = await res.json();
 
     cursorEnabledCb.checked = config.CURSOR_ENABLED !== false;
-    cursorTokenGroup.style.display = cursorEnabledCb.checked ? 'flex' : 'none';
+    setCursorConnVisible(cursorEnabledCb.checked);
 
     document.getElementById('set-vis-rtk').checked = config.RTK_ENABLED !== false;
     document.getElementById('set-vis-caveman').checked = config.CAVEMAN_ENABLED !== false;
@@ -114,6 +118,17 @@ async function loadSettingsUI() {
 const escAttr = (s) => String(s)
   .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
+function applyDerivedRates(tr) {
+  const rates = derivePricingRates(
+    tr.querySelector('.px-prefix').value,
+    tr.querySelector('.px-in').value,
+  );
+  tr.querySelector('.px-out').value = rates.out;
+  tr.querySelector('.px-cr').value = rates.cr;
+  tr.querySelector('.px-cw5').value = rates.cw5;
+  tr.querySelector('.px-cw1').value = rates.cw1;
+}
+
 function addPricingRow(prefix = '', cost = { in: 0, out: 0, cr: 0, cw5: 0, cw1: 0 }) {
   const tr = document.createElement('tr');
   tr.innerHTML = `
@@ -126,7 +141,17 @@ function addPricingRow(prefix = '', cost = { in: 0, out: 0, cr: 0, cw5: 0, cw1: 
     <td style="text-align:center;"><button class="btn-del-pricing">&times;</button></td>
   `;
   tr.querySelector('.btn-del-pricing').addEventListener('click', () => tr.remove());
+  // Input (and prefix family) drive the other columns live. Don't recompute
+  // on load — a saved row may have a custom override. Refresh rates snaps
+  // every row back to the formula.
+  tr.querySelector('.px-in').addEventListener('input', () => applyDerivedRates(tr));
+  tr.querySelector('.px-prefix').addEventListener('input', () => applyDerivedRates(tr));
   pricingTableBody.appendChild(tr);
+}
+
+function refreshPricingRates() {
+  if (!pricingTableBody) return;
+  for (const tr of pricingTableBody.querySelectorAll('tr')) applyDerivedRates(tr);
 }
 
 // Wire the settings button, modal, pricing editor, and save handler.
@@ -140,9 +165,10 @@ export function initSettings() {
   cursorTokenGroup = document.getElementById('set-cursor-token-group');
   pricingTableBody = document.getElementById('pricing-table-body');
   const addPricingRowBtn = document.getElementById('btn-add-pricing-row');
+  const refreshPricingBtn = document.getElementById('btn-refresh-pricing');
 
   cursorEnabledCb.addEventListener('change', () => {
-    cursorTokenGroup.style.display = cursorEnabledCb.checked ? 'flex' : 'none';
+    setCursorConnVisible(cursorEnabledCb.checked);
   });
 
   const toggleCursorTokenBtn = document.getElementById('toggle-cursor-token');
@@ -237,6 +263,10 @@ export function initSettings() {
   addPricingRowBtn.addEventListener('click', (e) => {
     e.preventDefault();
     addPricingRow();
+  });
+  refreshPricingBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    refreshPricingRates();
   });
 
   // Tab navigation

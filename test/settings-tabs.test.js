@@ -58,6 +58,7 @@ test('each setting field lives in its expected panel', () => {
   inPanel('alerts', 'test-notification-btn');
   inPanel('pricing', 'pricing-table-body');
   inPanel('pricing', 'btn-add-pricing-row');
+  inPanel('pricing', 'btn-refresh-pricing');
   inPanel('data', 'reset-stats-btn');
   inPanel('data', 'restore-baseline-btn');
 });
@@ -103,6 +104,22 @@ test('the Test-token button POSTs the field value to /api/cursor/test', () => {
 test('pricing prefix values are attribute-escaped before templating', () => {
   // User-editable prefixes are re-rendered into value="…" — must go through escAttr.
   assert.match(SETTINGS_JS, /value="\$\{escAttr\(prefix\)\}"/, 'px-prefix must interpolate escAttr(prefix), not raw prefix');
+});
+
+test('pricing rows recompute derived rates when Input or prefix changes', () => {
+  // Changing Input (or the prefix family) fills Output / Cache Rd / Cw 5m / Cw 1h.
+  // Must not recompute on load — a saved row may carry a custom override.
+  assert.match(SETTINGS_JS, /import \{ PRICING, derivePricingRates \}/, 'settings.js must import derivePricingRates');
+  assert.match(SETTINGS_JS, /function applyDerivedRates\(/, 'applyDerivedRates helper missing');
+  assert.match(SETTINGS_JS, /\.px-in'\)\.addEventListener\('input'/, 'px-in must listen for input');
+  assert.match(SETTINGS_JS, /\.px-prefix'\)\.addEventListener\('input'/, 'px-prefix must listen for input');
+});
+
+test('pricing Refresh rates button recomputes every row from Input', () => {
+  assert.ok(HTML.includes('id="btn-refresh-pricing"'), 'Refresh rates button missing from HTML');
+  assert.match(SETTINGS_JS, /function refreshPricingRates\(/, 'refreshPricingRates helper missing');
+  assert.match(SETTINGS_JS, /btn-refresh-pricing/, 'refresh button not queried in settings.js');
+  assert.match(SETTINGS_JS, /refreshPricingRates\(\);/, 'refresh click must call refreshPricingRates');
 });
 
 test('save/cancel footer stays outside every tab panel', () => {

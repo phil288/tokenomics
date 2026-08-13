@@ -8,8 +8,24 @@ export const MODE_COLORS = {
   off: '#6b7280', commit: '#58a6ff', review: '#3fb950', compress: '#38bdf8',
 };
 
-// Universal Claude billing ratios (in units of that model's input token):
-// output 5×, cache-read 0.1×, cache-write-5m 1.25×, cache-write-1h 2×.
+// Family billing ratios from that model's input price ($/MTok).
+// Claude/Cursor output 5×; Gemini/Antigravity output 6×.
+// Cache is universal: read 0.1×, write-5m 1.25×, write-1h 2×.
+export function derivePricingRates(prefix, input) {
+  const n = Number(input);
+  const inVal = Number.isFinite(n) ? n : 0;
+  const p = String(prefix || '').toLowerCase();
+  const outMul = (p.startsWith('gemini') || p.startsWith('antigravity')) ? 6 : 5;
+  const round = (x) => parseFloat(x.toFixed(6));
+  return {
+    in: round(inVal),
+    out: round(inVal * outMul),
+    cr: round(inVal * 0.1),
+    cw5: round(inVal * 1.25),
+    cw1: round(inVal * 2),
+  };
+}
+
 export function modelRaw(m) {
   return (m.input || 0) + (m.output || 0) + (m.cache_reads || 0) + (m.cache_writes_total || 0);
 }

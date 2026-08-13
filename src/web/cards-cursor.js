@@ -1,5 +1,5 @@
 import { usageBar } from './cards-common.js';
-import { computePace, monthlyCycle } from './pace.js';
+import { computePace, cycleFromRange, parseEpochMs } from './pace.js';
 
 // `alert` is off for the Total bar: it is max(auto, api), so whichever bar
 // drives it alerts already and a second notification says nothing new.
@@ -11,13 +11,25 @@ function cursorBar(label, pctVal, sub, mb = 12, pace = null, alert = true) {
   });
 }
 
-// Cursor's quota resets with the billing cycle; the API only gives its start,
-// so the current cycle is the monthly anniversary window containing now.
-function cursorCycleStartMs(d) {
-  const raw = d.subscriptionCycleStart || (d.billingCycle && d.billingCycle.cycleStart);
-  if (!raw) return null;
-  const ms = new Date(isNaN(raw) ? raw : parseInt(raw)).getTime();
-  return Number.isNaN(ms) ? null : ms;
+// Cursor's quota resets on the billing-cycle renewal. GetCurrentPeriodUsage
+// sends billingCycleStart / billingCycleEnd (ms strings); older/team payloads
+// used subscriptionCycleStart or billingCycle.cycleStart. Prefer the explicit
+// start→end range so the white pace tick lands on "how far through this cycle".
+function cursorCycleBounds(d) {
+  const bc = d.billingCycle || d.billing_cycle || {};
+  const pi = d.planInfo || {};
+  return {
+    start: d.billingCycleStart ?? d.billing_cycle_start ?? d.subscriptionCycleStart
+      ?? bc.cycleStart ?? bc.cycle_start ?? bc.start,
+    end: d.billingCycleEnd ?? d.billing_cycle_end
+      ?? bc.cycleEnd ?? bc.cycle_end ?? bc.end
+      ?? pi.billingCycleEnd ?? pi.billing_cycle_end,
+  };
+}
+
+function cursorCycle(d, now) {
+  const { start, end } = cursorCycleBounds(d);
+  return cycleFromRange(start, end, now);
 }
 
 function cursorPace(cycle, usedPct) {
@@ -33,13 +45,13 @@ function cursorBars(totalPct, autoPct, apiPct, cycle = null) {
   return `
       ${cursorBar('Total', totalPct, cursorTotalSub(autoPct, apiPct), 12, cursorPace(cycle, totalPct), false)}
       ${cursorBar('Auto + Composer', autoPct, CURSOR_SUB_AUTO, 12, cursorPace(cycle, autoPct))}
-      ${cursorBar('API', apiPct, CURSOR_SUB_API, 16, cursorPace(cycle, apiPct))}`;
+      ${cursorBar('API', apiPct, CURSOR_SUB_API, 12, cursorPace(cycle, apiPct))}`;
 }
 
 export function renderCursor(d) {
   if (!d || d.error) return `<div class="err">${d && d.error ? d.error : 'No Cursor data'}</div>`;
 
-  const cycle = monthlyCycle(cursorCycleStartMs(d));
+  const cycle = cursorCycle(d);
 
   if (d.planUsage) {
     const autoPct = d.planUsage.autoPercentUsed || 0;
@@ -75,13 +87,10 @@ export function renderCursor(d) {
   const totalPct = Math.max(autoPct, apiPct);
 
   let cycleStartStr = '—';
-  const cycleStartVal = d.subscriptionCycleStart || (d.billingCycle && d.billingCycle.cycleStart);
-  if (cycleStartVal) {
-    const dateObj = new Date(isNaN(cycleStartVal) ? cycleStartVal : parseInt(cycleStartVal));
-    if (!isNaN(dateObj.getTime())) {
-      // Format as UTC to prevent timezone offsets shifting the date
-      cycleStartStr = `${dateObj.getUTCMonth() + 1}/${dateObj.getUTCDate()}/${dateObj.getUTCFullYear()}`;
-    }
+  const startMs = parseEpochMs(cursorCycleBounds(d).start);
+  if (startMs) {
+    const dateObj = new Date(startMs);
+    cycleStartStr = `${dateObj.getUTCMonth() + 1}/${dateObj.getUTCDate()}/${dateObj.getUTCFullYear()}`;
   }
 
   const formatNum = n => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n;

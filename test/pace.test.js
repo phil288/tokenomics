@@ -11,12 +11,12 @@ const ROOT = path.join(__dirname, '..');
 const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const PACE_JS = read('src/web/pace.js');
 const EXPORTS = [
-  'HOUR', 'DAY', 'windowUnits', 'computePace', 'monthlyCycle',
-  'parseDuration', 'windowSecsFromLabel', 'paceMarker', 'paceNote',
+  'HOUR', 'DAY', 'windowUnits', 'computePace', 'parseEpochMs', 'monthlyCycle',
+  'cycleFromRange', 'parseDuration', 'windowSecsFromLabel', 'paceMarker', 'paceNote',
 ];
 // eslint-disable-next-line no-new-func
 const pace = new Function(`${PACE_JS.replace(/^export /gm, '')}\nreturn { ${EXPORTS.join(', ')} };`)();
-const { HOUR, DAY, windowUnits, computePace, monthlyCycle, parseDuration, windowSecsFromLabel, paceMarker, paceNote } = pace;
+const { HOUR, DAY, windowUnits, computePace, parseEpochMs, monthlyCycle, cycleFromRange, parseDuration, windowSecsFromLabel, paceMarker, paceNote } = pace;
 
 test('windowUnits slices long windows into days and short ones into hours', () => {
   assert.deepEqual(windowUnits(7 * DAY), { unit: DAY, count: 7, label: 'day' });
@@ -88,6 +88,50 @@ test('monthlyCycle rejects missing/unparseable starts', () => {
   assert.equal(monthlyCycle(null), null);
   assert.equal(monthlyCycle(0), null);
   assert.equal(monthlyCycle('nope'), null);
+});
+
+test('parseEpochMs accepts ms, ms-strings, unix seconds, and ISO', () => {
+  assert.equal(parseEpochMs(1_752_000_000_000), 1_752_000_000_000);
+  assert.equal(parseEpochMs('1752000000000'), 1_752_000_000_000);
+  assert.equal(parseEpochMs(1_752_000_000), 1_752_000_000_000); // seconds
+  assert.equal(parseEpochMs('2026-07-08T00:00:00.000Z'), Date.parse('2026-07-08T00:00:00.000Z'));
+  assert.equal(parseEpochMs(null), null);
+  assert.equal(parseEpochMs(''), null);
+  assert.equal(parseEpochMs('nope'), null);
+});
+
+test('cycleFromRange uses an explicit start→renewal window when both are present', () => {
+  const start = Date.UTC(2026, 6, 15); // 2026-07-15
+  const end = Date.UTC(2026, 7, 15);   // 2026-08-15
+  const now = Date.UTC(2026, 7, 1);    // 2026-08-01 → 14 days left of 31
+  const c = cycleFromRange(String(start), String(end), now);
+  assert.equal(c.windowSecs, 31 * DAY);
+  assert.equal(c.remainingSecs, 14 * DAY);
+  const p = computePace({ usedPct: 18, windowSecs: c.windowSecs, remainingSecs: c.remainingSecs });
+  assert.equal(p.index, 18);
+  assert.equal(p.count, 31);
+});
+
+test('cycleFromRange falls back to monthlyCycle when only the start is known', () => {
+  const start = Date.UTC(2026, 5, 15);
+  const now = Date.UTC(2026, 7, 1);
+  assert.deepEqual(cycleFromRange(start, null, now), monthlyCycle(start, now));
+  assert.equal(cycleFromRange(null, null, now), null);
+});
+
+test('cycleFromRange with only a renewal date infers the previous month as start', () => {
+  const end = Date.UTC(2026, 7, 15); // 2026-08-15
+  const now = Date.UTC(2026, 7, 1);
+  const c = cycleFromRange(null, end, now);
+  assert.equal(c.windowSecs, (end - Date.UTC(2026, 6, 15)) / 1000);
+  assert.equal(c.remainingSecs, 14 * DAY);
+});
+
+test('cycleFromRange ignores an already-ended range and walks from start', () => {
+  const start = Date.UTC(2026, 5, 15);
+  const end = Date.UTC(2026, 6, 15); // ended before now
+  const now = Date.UTC(2026, 7, 1);
+  assert.deepEqual(cycleFromRange(start, end, now), monthlyCycle(start, now));
 });
 
 test('parseDuration reads the rendered agy refresh strings', () => {
@@ -164,12 +208,15 @@ test('antigravity flips its remaining-quota gauge into a used-% bar', () => {
   assert.match(agy, /remainingSecs: parseDuration\(lim && lim\.refresh\)/);
 });
 
-test('cursor paces off the monthly billing cycle for all three bars', () => {
+test('cursor paces off billingCycleStart/End (the live API fields), not only the old aliases', () => {
   const cur = read('src/web/cards-cursor.js');
-  assert.match(cur, /import \{ computePace, monthlyCycle \} from '\.\/pace\.js'/);
-  assert.match(cur, /function cursorCycleStartMs\(d\)/);
-  assert.match(cur, /d\.subscriptionCycleStart \|\| \(d\.billingCycle && d\.billingCycle\.cycleStart\)/);
-  assert.match(cur, /const cycle = monthlyCycle\(cursorCycleStartMs\(d\)\)/);
+  assert.match(cur, /import \{ computePace, cycleFromRange, parseEpochMs \} from '\.\/pace\.js'/);
+  assert.match(cur, /function cursorCycleBounds\(d\)/);
+  assert.match(cur, /d\.billingCycleStart/);
+  assert.match(cur, /d\.billingCycleEnd/);
+  assert.match(cur, /function cursorCycle\(d, now\)/);
+  assert.match(cur, /cycleFromRange\(start, end, now\)/);
+  assert.match(cur, /const cycle = cursorCycle\(d\)/);
   assert.match(cur, /cursorBar\('Total'.*cursorPace\(cycle, totalPct\)/);
   assert.match(cur, /cursorBar\('Auto \+ Composer'.*cursorPace\(cycle, autoPct\)\)/);
   assert.match(cur, /cursorBar\('API'.*cursorPace\(cycle, apiPct\)\)/);
