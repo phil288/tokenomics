@@ -32,6 +32,9 @@ const STATS = {
       lifetime: { tokens_saved: 900_000, compression_savings_usd: 4.5, requests: 33 },
       display_session: { savings_percent: 62 },
     },
+  },
+  // Quota windows now come from the `claude /usage` poll, not Headroom.
+  claude: {
     latest: {
       five_hour: { utilization_pct: 42 },
       seven_day: { utilization_pct: 13 },

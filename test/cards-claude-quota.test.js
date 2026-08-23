@@ -67,13 +67,13 @@ test('current session only shows a countdown from valid Headroom timing', () => 
 
 test('clock-derived Claude quota text refreshes once per second between SSE frames', () => {
   assert.match(MAIN_JS, /function clockTick\(\)/);
-  assert.match(MAIN_JS, /renderClaude\(state\.lastStats\.headroom\)/);
+  assert.match(MAIN_JS, /renderClaude\(state\.lastStats\.claude\)/);
   assert.match(MAIN_JS, /setInterval\(clockTick, 1000\)/);
 });
 
-// The card shows when the quota numbers were last read *from Anthropic*
-// (Headroom's `latest.polled_at`), not when the dashboard last refreshed —
-// otherwise a dead proxy leaves stale bars looking live.
+// The card shows when the quota numbers were last read by the `claude /usage`
+// poll (`polled_at`), not when the dashboard last refreshed — otherwise a
+// failing poll leaves stale bars looking live.
 const CSS = fs.readFileSync(path.join(ROOT, 'index.css'), 'utf8');
 
 // Load the real polledFreshness (+ its thresholds) by stripping ES module
@@ -86,7 +86,7 @@ function loadFreshness() {
   return factory(() => 'X ago');
 }
 
-test('polledFreshness reports the Anthropic poll time, tiered by staleness', () => {
+test('polledFreshness reports the claude /usage poll time, tiered by staleness', () => {
   const { polledFreshness, POLL_WARN_SECS, POLL_STALE_SECS } = loadFreshness();
   assert.equal(POLL_WARN_SECS, 5 * 60);
   assert.equal(POLL_STALE_SECS, 30 * 60);
@@ -100,10 +100,10 @@ test('polledFreshness reports the Anthropic poll time, tiered by staleness', () 
 
   // Text carries the relative age plus an absolute timestamp on hover.
   assert.match(polledFreshness(at(10)), /Updated X ago/);
-  assert.match(polledFreshness(at(10)), /title="Last polled from Anthropic: /);
+  assert.match(polledFreshness(at(10)), /title="Last polled via claude \/usage: /);
 });
 
-test('polledFreshness degrades safely when Headroom sent no poll timestamp', () => {
+test('polledFreshness degrades safely when the poll sent no timestamp', () => {
   const { polledFreshness } = loadFreshness();
   for (const bad of [undefined, null, '', 'not-a-date']) {
     const html = polledFreshness(bad);
@@ -113,15 +113,57 @@ test('polledFreshness degrades safely when Headroom sent no poll timestamp', () 
   }
 });
 
-test('both Claude render paths show the poll age, sourced from latest.polled_at', () => {
+test('both Claude render paths show the poll age, sourced from the poll cache', () => {
   // Quota bars present...
-  assert.match(CLAUDE_CARDS_JS, /\$\{polledFreshness\(lt\.polled_at\)\}\s*\n\s*\$\{quotaBar\('Current session \(5h\)'/);
-  // ...and the "poll pending / Headroom unreachable" fallback.
-  assert.match(CLAUDE_CARDS_JS, /class="\$\{online \? 'note' : 'err'\}">\$\{msg\}<\/div>\s*\n\s*\$\{polledFreshness\(lt\.polled_at\)\}/);
+  assert.match(CLAUDE_CARDS_JS, /\$\{polledFreshness\(d\.polled_at\)\}\s*\n\s*\$\{quotaBar\('Current session \(5h\)'/);
+  // ...and the "poll pending / poll failed" fallback.
+  assert.match(CLAUDE_CARDS_JS, /class="\$\{d\.error \? 'err' : 'note'\}">\$\{msg\}<\/div>\s*\n\s*\$\{polledFreshness\(d\.polled_at\)\}/);
 });
 
 test('poll-age styling is theme-aware and flags staleness', () => {
   assert.match(CSS, /\.poll-age\s*{[^}]*var\(--muted\)/);
   assert.match(CSS, /\.poll-age\.warn\s*{[^}]*var\(--warn\)/);
   assert.match(CSS, /\.poll-age\.stale[\s\S]{0,40}\.poll-age\.unknown\s*{[^}]*var\(--danger\)/);
+});
+
+// ---- quota source: `claude /usage`, not Headroom ----
+
+test('the Claude card renders from the claude /usage poll, not Headroom state', () => {
+  // both render paths (SSE frame + 1s clock tick) read stats.claude
+  assert.match(MAIN_JS, /renderClaude\(stats\.claude\)/);
+  assert.doesNotMatch(MAIN_JS, /renderClaude\((?:stats|state\.lastStats)\.headroom\)/);
+});
+
+test('polled_at is read from the poll cache, not from latest.*', () => {
+  assert.match(CLAUDE_CARDS_JS, /polledFreshness\(d\.polled_at\)/);
+  assert.doesNotMatch(CLAUDE_CARDS_JS, /polledFreshness\(lt\.polled_at\)/);
+});
+
+test('a stale poll error still renders the last good bars', () => {
+  // an error alone must not short-circuit the whole card — the poller keeps
+  // the previous `latest`, and the freshness line reports the age.
+  assert.doesNotMatch(CLAUDE_CARDS_JS, /if \(!d \|\| d\.error\) return/);
+  assert.match(CLAUDE_CARDS_JS, /if \(!d\) return/);
+});
+
+test('server polls claude on its own slow timer, out of the SSE loop', () => {
+  const SERVER_JS = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+  assert.match(SERVER_JS, /CLAUDE_POLL_MS/);
+  assert.match(SERVER_JS, /setInterval\(\(\) => pollClaude\(\)[\s\S]*?CLAUDE_POLL_MS\)/);
+  // and an initial poll at boot so the card fills without waiting a full tick
+  assert.match(SERVER_JS, /pollClaude\(\)\.catch\(err => console\.error\('Initial Claude poll failed/);
+});
+
+test('history quota carry-over reads the claude poll', () => {
+  const HISTORY_JS = fs.readFileSync(path.join(ROOT, 'src', 'history.js'), 'utf8');
+  assert.match(HISTORY_JS, /stats\.claude && stats\.claude\.latest/);
+  assert.doesNotMatch(HISTORY_JS, /stats\.headroom && stats\.headroom\.latest/);
+});
+
+test('the card subtitle names the real quota source', () => {
+  const HTML = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const card = HTML.slice(HTML.indexOf('id="claude-card"'));
+  const head = card.slice(0, card.indexOf('</span></span>') + 14);
+  assert.match(head, /Claude quota <span class="card-sub">via claude \/usage<\/span>/);
+  assert.doesNotMatch(head, /via Headroom/);
 });

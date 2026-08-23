@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { getSettings, updateSettings } = require('./src/settings');
-const { collectStats, collectStatsRaw, pollAntigravity, collectActivity, collectRtkTotals, resolveCursorToken, testCursorToken } = require('./src/collectors');
+const { collectStats, collectStatsRaw, pollAntigravity, pollClaude, collectActivity, collectRtkTotals, resolveCursorToken, testCursorToken } = require('./src/collectors');
 const { history, recordSnapshot, clearHistory } = require('./src/history');
 const { captureBaseline, clearBaseline, applyActivityBaseline } = require('./src/baseline');
 const analysis = require('./src/analysis');
@@ -24,6 +24,9 @@ const PORT = Number(process.env.PORT) || 3000;
 const REFRESH_MS = Number(process.env.REFRESH_MS) || 10000;
 const HISTORY_INTERVAL_MS = Number(process.env.HISTORY_INTERVAL_MS) || 60000;
 const ANTIGRAVITY_POLL_MS = Number(process.env.ANTIGRAVITY_POLL_MS) || 300000;
+// `claude /usage` costs ~11s per call (longer than the SSE refresh), so the
+// Claude quota poll gets its own slow timer too.
+const CLAUDE_POLL_MS = Number(process.env.CLAUDE_POLL_MS) || 300000;
 // Tags change rarely + unauthenticated GitHub API is rate-limited, so the
 // update check runs on a slow timer (default 1h) out of the fast SSE loop.
 const VERSION_POLL_MS = Number(process.env.VERSION_POLL_MS) || 3600000;
@@ -54,11 +57,13 @@ setInterval(recordHistory, HISTORY_INTERVAL_MS);
 // Antigravity is polled on a slow timer of its own: each poll spawns the heavy
 // agy binary over a PTY (~15-20s), so it must stay out of the fast SSE loop.
 setInterval(() => pollAntigravity().catch(err => console.error('Antigravity poll failed:', err)), ANTIGRAVITY_POLL_MS);
+setInterval(() => pollClaude().catch(err => console.error('Claude poll failed:', err)), CLAUDE_POLL_MS);
 setInterval(() => pollVersion().catch(err => console.error('Version poll failed:', err)), VERSION_POLL_MS);
 
 // Run initial history recording task on startup
 recordHistory().catch(err => console.error('Initial history record failed:', err));
 pollAntigravity().catch(err => console.error('Initial Antigravity poll failed:', err));
+pollClaude().catch(err => console.error('Initial Claude poll failed:', err));
 pollVersion().catch(err => console.error('Initial version poll failed:', err));
 
 const server = http.createServer(async (req, res) => {
@@ -238,6 +243,11 @@ const server = http.createServer(async (req, res) => {
         // repopulates now instead of waiting for the next 5-min tick.
         if (updated.ANTIGRAVITY_ENABLED !== false) {
           pollAntigravity().catch(err => console.error('Antigravity poll failed:', err));
+        }
+        // Same for Claude: re-enabling should repopulate the card immediately
+        // rather than after the next slow tick.
+        if (updated.CLAUDE_ENABLED !== false) {
+          pollClaude().catch(err => console.error('Claude poll failed:', err));
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, settings: updated }));

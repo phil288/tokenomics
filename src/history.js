@@ -70,7 +70,9 @@ function compactSnapshot(stats) {
   row.cav = { saved: c.total_saved_tokens || 0, sessions: c.session_count || 0 };
 
   const wt = (stats.headroom && stats.headroom.window_tokens) || {};
-  const lt = (stats.headroom && stats.headroom.latest) || {};
+  // Quota windows come from the `claude /usage` poll (stats.claude), not from
+  // Headroom's subscription_state mirror.
+  const lt = (stats.claude && stats.claude.latest) || {};
   // Authoritative Headroom savings ledger (proxy_savings.json) — cumulative.
   const sav = (stats.headroom && stats.headroom.savings) || {};
   const life = sav.lifetime || {};

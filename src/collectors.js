@@ -37,6 +37,7 @@ const {
 } = require('./collectors-headroom');
 const { collectCursor, readCursorAccessToken, resolveCursorToken, testCursorToken } = require('./collectors-cursor');
 const { pollAntigravity, parseAgyUsage, getAntigravityCache } = require('./collectors-antigravity');
+const { pollClaude, parseClaudeUsage, getClaudeCache } = require('./collectors-claude');
 const { collectActivity, clampLimit } = require('./collectors-activity');
 
 async function collectLastUsed(headroom) {
@@ -61,8 +62,8 @@ async function collectUsers() {
       rtk: rtk.summary || null,
       caveman,
       claude: {
-        latest: headroom.latest,
-        has_quota: Boolean(headroom.latest),
+        // Quota is account-wide and comes from the `claude /usage` poll, not
+        // per-home Headroom state, so no per-user `latest` here.
         headroom_state: headroom.has_state,
         last_active_at: headroom.last_active_at,
       },
@@ -73,6 +74,14 @@ async function collectUsers() {
       },
     };
   }));
+}
+
+// The Claude card renders from the `claude /usage` poll (cached, slow timer).
+// Headroom's health pill and per-user rows still ride along on the same object
+// because the card shows them, but the quota windows are Claude's own.
+function buildClaude(users, headroom) {
+  const cache = getClaudeCache() || {};
+  return { ...cache, users, health: (headroom && headroom.health) || null };
 }
 
 async function collectStatsRaw() {
@@ -92,7 +101,8 @@ async function collectStatsRaw() {
     antigravity: settings.ANTIGRAVITY_ENABLED !== false,
   };
   return {
-    rtk, caveman, headroom, cursor, antigravity: getAntigravityCache(), users,
+    rtk, caveman, headroom, cursor, claude: buildClaude(users, headroom),
+    antigravity: getAntigravityCache(), users,
     visibility, last_used: lastUsed, version: collectVersion(),
     timestamp: new Date().toISOString(), refresh_ms: REFRESH_MS,
   };
@@ -111,6 +121,9 @@ module.exports = {
   testCursorToken,
   pollAntigravity,
   parseAgyUsage,
+  pollClaude,
+  parseClaudeUsage,
+  getClaudeCache,
   parseTextRTK,
   parseRtkVal,
   collectLastUsed,

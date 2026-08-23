@@ -44,7 +44,7 @@ function render(stats) {
   }
 
   const claudeEl = document.getElementById('claude');
-  if (claudeEl) claudeEl.innerHTML = renderClaude(stats.headroom);
+  if (claudeEl) claudeEl.innerHTML = renderClaude(stats.claude);
 
   // skip rebuilding the Headroom card while the explainer is open — don't interrupt reading
   if (!state.explainOpen) {
@@ -152,7 +152,7 @@ function clockTick() {
   if (!state.lastStats) return;
   renderHero(state.lastStats); // refreshes "used Xago" chips (no chart, safe to rebuild)
   const claudeEl = document.getElementById('claude');
-  if (claudeEl) claudeEl.innerHTML = renderClaude(state.lastStats.headroom);
+  if (claudeEl) claudeEl.innerHTML = renderClaude(state.lastStats.claude);
 }
 function startClock() {
   if (clockTimer) clearInterval(clockTimer);

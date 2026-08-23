@@ -45,13 +45,14 @@ export function modelWindowLabel(slug) {
 }
 
 // How stale a quota reading may get before we flag it. The numbers below come
-// from Anthropic via Headroom's poll of the quota API, so a bar can look live
-// while actually being hours old if the proxy stopped polling.
+// from the slow `claude /usage` poll, so a bar can look live while actually
+// being hours old if that poll started failing.
 export const POLL_WARN_SECS = 5 * 60;
 export const POLL_STALE_SECS = 30 * 60;
 
 // Freshness line for the Claude card: when the quota numbers were last read
-// from Anthropic (`latest.polled_at`), not when the dashboard last refreshed.
+// from the `claude /usage` poll (`polled_at`), not when the dashboard last
+// refreshed.
 export function polledFreshness(polledAt) {
   const t = polledAt ? Date.parse(polledAt) : NaN;
   if (Number.isNaN(t)) {
@@ -60,12 +61,13 @@ export function polledFreshness(polledAt) {
   const age = Math.max(0, (Date.now() - t) / 1000);
   const level = age >= POLL_STALE_SECS ? 'stale' : age >= POLL_WARN_SECS ? 'warn' : 'fresh';
   const title = new Date(t).toLocaleString();
-  return `<div class="poll-age ${level}" title="Last polled from Anthropic: ${title}">`
+  return `<div class="poll-age ${level}" title="Last polled via claude /usage: ${title}">`
     + `Updated ${timeAgo(polledAt)}</div>`;
 }
 
-// Claude plan usage (session / weekly limits). Sourced from Headroom's poll of
-// the Claude quota API, but it's Claude's data — shown in its own card.
+// Claude plan usage (session / weekly limits). Sourced from Claude Code's own
+// `/usage` slash command (`claude -p "/usage"`, polled on a slow timer because
+// each call costs ~11s) — not from Headroom's mirror of the quota API.
 //
 // Anthropic reports the 7-day "all models" window plus zero or more per-model
 // 7-day windows (e.g. seven_day_sonnet, seven_day_opus, seven_day_fable) —
@@ -73,7 +75,10 @@ export function polledFreshness(polledAt) {
 // discover them from whatever `seven_day_<model>` keys Headroom actually sent
 // rather than hardcoding a single model.
 export function renderClaude(d) {
-  if (!d || d.error) return '<div class="err">No Claude quota data</div>';
+  // Note: a `d.error` alone must NOT short-circuit — the poller keeps the last
+  // good `latest` and flags the failure, so we still render the (stale) bars
+  // and let the freshness line say how old they are.
+  if (!d) return '<div class="err">No Claude quota data</div>';
   const lt = d.latest || {};
   const fh = lt.five_hour || {};
   const sd = lt.seven_day || {};
@@ -84,20 +89,21 @@ export function renderClaude(d) {
   const have = (fh.utilization_pct != null) || (sd.utilization_pct != null)
     || modelWindows.some(m => m.win.utilization_pct != null);
   if (!have) {
-    const online = d.health && d.health.ok;
-    const msg = online
-      ? 'Claude connected via Headroom; quota poll pending'
-      : 'Claude quota unavailable (Headroom not reachable)';
+    // `claude /usage` runs on a slow timer, so the first frames after boot
+    // legitimately have no quota yet — that's "pending", not an error.
+    const msg = d.error
+      ? `Claude quota unavailable (${d.error})`
+      : 'Claude quota poll pending (claude /usage)';
     return `
       ${headroomHealthPill(d.health)}
-      <div class="${online ? 'note' : 'err'}">${msg}</div>
-      ${polledFreshness(lt.polled_at)}
+      <div class="${d.error ? 'err' : 'note'}">${msg}</div>
+      ${polledFreshness(d.polled_at)}
       <div class="rows">${userBreakdown(d.users || [], 'claude')}</div>
     `;
   }
   const sessionSecs = sessionResetSecs(fh);
   return `
-    ${polledFreshness(lt.polled_at)}
+    ${polledFreshness(d.polled_at)}
     ${quotaBar('Current session (5h)', fh.utilization_pct, sessionSecs, remainingTime(sessionSecs), 5 * HOUR)}
     ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, quotaResetSecs(sd), '', 7 * DAY)}
     ${modelWindows.map(m => quotaBar(`Weekly · ${m.label} (7d)`, m.win.utilization_pct, quotaResetSecs(m.win), '', 7 * DAY)).join('')}
