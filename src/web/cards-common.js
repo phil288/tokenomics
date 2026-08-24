@@ -92,15 +92,22 @@ export function userBreakdown(users, kind) {
   return `<div class="divider"></div><div class="tcell-label" style="margin-bottom:6px">Per user</div>${rows}`;
 }
 
-export function heroUsers(users) {
-  if (!users || users.length < 2) return '';
+export function heroUsers(users, visibility = {}) {
+  if (!users || users.length < 2) {
+    return '';
+  }
+
+  if (visibility.rtk === false && visibility.caveman === false && visibility.headroom === false) {
+    return '';
+  }
+
   return users.map(u => {
-    const rtk = u.rtk ? (u.rtk.total_saved || 0) : 0;
-    const cav = u.caveman ? (u.caveman.total_saved_tokens || 0) : 0;
-    const hr = u.headroom ? (u.headroom.tokens_saved || 0) : 0;
+    const rtk = visibility.rtk !== false && u.rtk ? (u.rtk.total_saved || 0) : 0;
+    const cav = visibility.caveman !== false && u.caveman ? (u.caveman.total_saved_tokens || 0) : 0;
+    const hr = visibility.headroom !== false && u.headroom ? (u.headroom.tokens_saved || 0) : 0;
+
     return `<div class="chip" style="border-left-color:var(--muted)">
       <span class="chip-label">${ht(u.user)}</span><span class="chip-val">${ht(rtk + cav + hr)}</span>
     </div>`;
   }).join('');
 }
-
