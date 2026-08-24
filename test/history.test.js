@@ -9,8 +9,16 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 // Point data dir at an empty temp dir BEFORE requiring → settings load defaults.
-process.env.TOKENOMICS_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-hist-'));
-const { compactSnapshot } = require('../src/history');
+const TEST_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-hist-'));
+process.env.TOKENOMICS_DATA_DIR = TEST_DATA_DIR;
+process.env.HISTORY_MAX = '3';
+const {
+  compactSnapshot,
+  history,
+  loadHistory,
+  recordSnapshot,
+  clearHistory,
+} = require('../src/history');
 
 const STATS = {
   rtk: { summary: { total_saved: 550_000, total_commands: 52 } },
@@ -87,4 +95,37 @@ test('compactSnapshot tolerates an empty/absent stats payload', () => {
   assert.equal(row.hr.savedTokens, 0);
   assert.equal(row.hr.savedUsd, 0);
   assert.deepEqual(row.hr.models, {});
+});
+
+test('history keeps its exported array reference while capped snapshots advance', () => {
+  clearHistory();
+  const captured = history;
+
+  for (let saved = 1; saved <= 5; saved++) {
+    recordSnapshot({ rtk: { summary: { total_saved: saved, total_commands: saved } } });
+  }
+
+  assert.strictEqual(require('../src/history').history, captured);
+  assert.deepEqual(captured.map(row => row.rtk.saved), [3, 4, 5]);
+
+  recordSnapshot({ rtk: { summary: { total_saved: 6, total_commands: 6 } } });
+  assert.strictEqual(require('../src/history').history, captured);
+  assert.deepEqual(captured.map(row => row.rtk.saved), [4, 5, 6]);
+});
+
+test('loadHistory refreshes the captured array in place', () => {
+  const captured = history;
+  const rows = [7, 8, 9, 10].map(saved => ({
+    t: saved,
+    rtk: { saved, cmds: saved },
+  }));
+  fs.writeFileSync(
+    path.join(TEST_DATA_DIR, 'history.jsonl'),
+    rows.map(row => JSON.stringify(row)).join('\n') + '\n'
+  );
+
+  loadHistory();
+
+  assert.strictEqual(require('../src/history').history, captured);
+  assert.deepEqual(captured.map(row => row.rtk.saved), [8, 9, 10]);
 });
