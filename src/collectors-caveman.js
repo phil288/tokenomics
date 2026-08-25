@@ -30,9 +30,10 @@ function cavemanInstalled(home) {
 
 async function collectCavemanForHome(home) {
   const statusPath = path.join(home, '.claude', '.caveman-statusline-suffix');
+  const historyPath = cavemanHistoryPath(home);
   const [modeRaw, historyRaw, statusRaw] = await Promise.all([
     readFile(path.join(home, '.claude', '.caveman-active')),
-    readFile(cavemanHistoryPath(home)),
+    readFile(historyPath),
     readFile(statusPath),
   ]);
   const installed = cavemanInstalled(home);
@@ -69,6 +70,11 @@ async function collectCavemanForHome(home) {
     total_saved_usd: totalSavedUsd,
     statusline_saved_tokens: parseCompactTokenCount(statusRaw),
     statusline_updated_at: fileMtimeISO(statusPath),
+    history_path: historyPath,
+    history_present: !!historyRaw,
+    status_path: statusPath,
+    status_present: !!statusRaw,
+    telemetry_missing: installed && active && !historyRaw && !statusRaw,
   };
 }
 
@@ -80,11 +86,19 @@ async function collectCaveman() {
   let statuslineUpdatedAt = null;
   let anyInstalled = false;
   let anyActive = false;
+  const telemetry = [];
 
   for (const home of homes) {
     const homeCaveman = await collectCavemanForHome(home);
     anyInstalled = anyInstalled || homeCaveman.installed;
     anyActive = anyActive || homeCaveman.active;
+    telemetry.push({
+      home,
+      source: homeCaveman.source,
+      history_present: homeCaveman.history_present,
+      status_present: homeCaveman.status_present,
+      telemetry_missing: homeCaveman.telemetry_missing,
+    });
     const homeMode = homeCaveman.mode;
     if (homeMode && homeMode !== 'unknown') mode = homeMode;
     statuslineSavedTokens += homeCaveman.statusline_saved_tokens || 0;
@@ -117,6 +131,8 @@ async function collectCaveman() {
     total_saved_tokens: totalSavedTokens, total_saved_usd: totalSavedUsd, sessions,
     statusline_saved_tokens: statuslineSavedTokens,
     statusline_updated_at: statuslineUpdatedAt,
+    telemetry,
+    telemetry_missing: anyInstalled && anyActive && sessions.length === 0 && statuslineSavedTokens === 0,
   };
 }
 

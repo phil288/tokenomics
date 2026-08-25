@@ -115,9 +115,9 @@ test('polledFreshness degrades safely when the poll sent no timestamp', () => {
 
 test('both Claude render paths show the poll age, sourced from the poll cache', () => {
   // Quota bars present...
-  assert.match(CLAUDE_CARDS_JS, /\$\{polledFreshness\(d\.polled_at\)\}\s*\n\s*\$\{quotaBar\('Current session \(5h\)'/);
+  assert.match(CLAUDE_CARDS_JS, /\$\{polledFreshness\(d\.polled_at, quotaSource\(d\)\)\}\s*\n\s*\$\{quotaBar\('Current session \(5h\)'/);
   // ...and the "poll pending / poll failed" fallback.
-  assert.match(CLAUDE_CARDS_JS, /class="\$\{d\.error \? 'err' : 'note'\}">\$\{msg\}<\/div>\s*\n\s*\$\{polledFreshness\(d\.polled_at\)\}/);
+  assert.match(CLAUDE_CARDS_JS, /class="\$\{d\.error \? 'err' : 'note'\}">\$\{msg\}<\/div>\s*\n\s*\$\{polledFreshness\(d\.polled_at, quotaSource\(d\)\)\}/);
 });
 
 test('poll-age styling is theme-aware and flags staleness', () => {
@@ -135,7 +135,7 @@ test('the Claude card renders from the claude /usage poll, not Headroom state', 
 });
 
 test('polled_at is read from the poll cache, not from latest.*', () => {
-  assert.match(CLAUDE_CARDS_JS, /polledFreshness\(d\.polled_at\)/);
+  assert.match(CLAUDE_CARDS_JS, /polledFreshness\(d\.polled_at, quotaSource\(d\)\)/);
   assert.doesNotMatch(CLAUDE_CARDS_JS, /polledFreshness\(lt\.polled_at\)/);
 });
 

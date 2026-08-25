@@ -53,7 +53,21 @@ export const POLL_STALE_SECS = 30 * 60;
 // Freshness line for the Claude card: when the quota numbers were last read
 // from the `claude /usage` poll (`polled_at`), not when the dashboard last
 // refreshed.
-export function polledFreshness(polledAt) {
+function quotaSource(d) {
+  if (d && d.fallback === 'headroom') return 'Headroom fallback';
+  return 'claude /usage';
+}
+
+function sourceNote(d) {
+  const source = quotaSource(d);
+  const cls = d && d.fallback === 'headroom' ? 'warn' : 'note';
+  const extra = d && d.fallback === 'headroom'
+    ? ' · fallback because claude /usage is unavailable'
+    : '';
+  return `<div class="poll-age ${cls}" title="Quota source: ${source}${extra}">Source: ${source}${extra}</div>`;
+}
+
+export function polledFreshness(polledAt, source = 'claude /usage') {
   const t = polledAt ? Date.parse(polledAt) : NaN;
   if (Number.isNaN(t)) {
     return '<div class="poll-age unknown">Quota age unknown</div>';
@@ -61,7 +75,7 @@ export function polledFreshness(polledAt) {
   const age = Math.max(0, (Date.now() - t) / 1000);
   const level = age >= POLL_STALE_SECS ? 'stale' : age >= POLL_WARN_SECS ? 'warn' : 'fresh';
   const title = new Date(t).toLocaleString();
-  return `<div class="poll-age ${level}" title="Last polled via claude /usage: ${title}">`
+  return `<div class="poll-age ${level}" title="Last polled via ${source}: ${title}">`
     + `Updated ${timeAgo(polledAt)}</div>`;
 }
 
@@ -91,19 +105,24 @@ export function renderClaude(d) {
   if (!have) {
     // `claude /usage` runs on a slow timer, so the first frames after boot
     // legitimately have no quota yet — that's "pending", not an error.
+    const blocked = d.fallback_blocked === 'headroom_stale'
+      ? `; stale Headroom fallback ignored${d.fallback_polled_at ? ` (last ${timeAgo(d.fallback_polled_at)})` : ''}`
+      : '';
     const msg = d.error
-      ? `Claude quota unavailable (${d.error})`
+      ? `Claude quota unavailable (${d.error}${blocked})`
       : 'Claude quota poll pending (claude /usage)';
     return `
       ${headroomHealthPill(d.health)}
+      ${sourceNote(d)}
       <div class="${d.error ? 'err' : 'note'}">${msg}</div>
-      ${polledFreshness(d.polled_at)}
+      ${polledFreshness(d.polled_at, quotaSource(d))}
       <div class="rows">${userBreakdown(d.users || [], 'claude')}</div>
     `;
   }
   const sessionSecs = sessionResetSecs(fh);
   return `
-    ${polledFreshness(d.polled_at)}
+    ${sourceNote(d)}
+    ${polledFreshness(d.polled_at, quotaSource(d))}
     ${quotaBar('Current session (5h)', fh.utilization_pct, sessionSecs, remainingTime(sessionSecs), 5 * HOUR)}
     ${quotaBar('Weekly · all models (7d)', sd.utilization_pct, quotaResetSecs(sd), '', 7 * DAY)}
     ${modelWindows.map(m => quotaBar(`Weekly · ${m.label} (7d)`, m.win.utilization_pct, quotaResetSecs(m.win), '', 7 * DAY)).join('')}

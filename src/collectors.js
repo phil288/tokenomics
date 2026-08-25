@@ -76,18 +76,80 @@ async function collectUsers() {
   }));
 }
 
+function sumUserRtkSummary(users) {
+  const summary = {
+    total_commands: 0,
+    total_input: 0,
+    total_output: 0,
+    total_saved: 0,
+    total_time_ms: 0,
+    avg_savings_pct: 0,
+    avg_time_ms: 0,
+  };
+  let sources = 0;
+  for (const user of users || []) {
+    const rtk = user && user.rtk;
+    if (!rtk) continue;
+    sources += 1;
+    summary.total_commands += rtk.total_commands || 0;
+    summary.total_input += rtk.total_input || 0;
+    summary.total_output += rtk.total_output || 0;
+    summary.total_saved += rtk.total_saved || 0;
+    summary.total_time_ms += rtk.total_time_ms || 0;
+  }
+  summary.avg_savings_pct = summary.total_input
+    ? (summary.total_saved / summary.total_input) * 100
+    : 0;
+  summary.avg_time_ms = summary.total_commands
+    ? Math.round(summary.total_time_ms / summary.total_commands)
+    : 0;
+  return sources ? summary : null;
+}
+
+function applyUserRtkFallback(rtk, users) {
+  if (!rtk || typeof rtk !== 'object') return rtk;
+  const userSummary = sumUserRtkSummary(users);
+  if (!userSummary) return rtk;
+  const current = rtk.summary || {};
+  if ((current.total_saved || 0) >= userSummary.total_saved) return rtk;
+  return { ...rtk, summary: userSummary, summary_source: 'users' };
+}
+
+const QUOTA_FALLBACK_MAX_AGE_MS = Number(process.env.CLAUDE_QUOTA_FALLBACK_MAX_AGE_MS) || 30 * 60 * 1000;
+
+function isFreshEnough(iso, maxAgeMs = QUOTA_FALLBACK_MAX_AGE_MS) {
+  const t = iso ? Date.parse(iso) : NaN;
+  return !Number.isNaN(t) && Date.now() - t <= maxAgeMs;
+}
+
 // The Claude card renders from the `claude /usage` poll (cached, slow timer).
 // Headroom's health pill and per-user rows still ride along on the same object
 // because the card shows them, but the quota windows are Claude's own.
 function buildClaude(users, headroom) {
   const cache = getClaudeCache() || {};
-  return { ...cache, users, health: (headroom && headroom.health) || null };
+  const hasCliQuota = cache.latest && Object.keys(cache.latest).length;
+  const headroomLatest = headroom && headroom.latest;
+  const headroomPolledAt = headroomLatest && (headroomLatest.polled_at || headroom.last_active_at);
+  const canFallback = headroomLatest && isFreshEnough(headroomPolledAt);
+  const quota = hasCliQuota || !canFallback ? { ...cache } : {
+    ...cache,
+    latest: headroomLatest,
+    polled_at: headroomPolledAt || null,
+    stale: true,
+    fallback: 'headroom',
+  };
+  if (!hasCliQuota && headroomLatest && !canFallback) {
+    quota.fallback_blocked = 'headroom_stale';
+    quota.fallback_polled_at = headroomPolledAt || null;
+  }
+  return { ...quota, users, health: (headroom && headroom.health) || null };
 }
 
 async function collectStatsRaw() {
-  const [rtk, caveman, headroom, cursor, users] = await Promise.all([
+  let [rtk, caveman, headroom, cursor, users] = await Promise.all([
     collectRTK(), collectCaveman(), collectHeadroom(), collectCursor(), collectUsers()
   ]);
+  rtk = applyUserRtkFallback(rtk, users);
   if (rtk && typeof rtk === 'object') rtk.users = users;
   if (caveman && typeof caveman === 'object') caveman.users = users;
   if (headroom && typeof headroom === 'object') headroom.users = users;
@@ -109,7 +171,9 @@ async function collectStatsRaw() {
 }
 
 async function collectStats() {
-  return applyBaseline(await collectStatsRaw());
+  const stats = applyBaseline(await collectStatsRaw());
+  if (stats && stats.rtk) stats.rtk = applyUserRtkFallback(stats.rtk, stats.users);
+  return stats;
 }
 
 module.exports = {
@@ -129,6 +193,8 @@ module.exports = {
   collectLastUsed,
   collectStats,
   collectStatsRaw,
+  sumUserRtkSummary,
+  applyUserRtkFallback,
   collectActivity,
   collectRtkTotals,
   parseProxyPerfLine,

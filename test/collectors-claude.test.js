@@ -89,3 +89,45 @@ test('the disabled setting empties the cache without spawning the CLI', async ()
     settings.CLAUDE_ENABLED = prev;
   }
 });
+
+test('root LaunchDaemon executes Claude as the configured home user', () => {
+  const { commandForHome } = require('../src/collectors-claude');
+  const originalGetuid = process.getuid;
+  process.getuid = () => 0;
+  try {
+    const cmd = commandForHome('/tmp/claude', ['-p', '/usage'], '/Users/mitch', {
+      platform: 'darwin',
+      uid: 501,
+    });
+    assert.equal(cmd.file, '/bin/launchctl');
+    assert.deepEqual(cmd.args, [
+      'asuser',
+      '501',
+      '/usr/bin/sudo',
+      '-n',
+      '-H',
+      '-u',
+      'mitch',
+      '/tmp/claude',
+      '-p',
+      '/usage',
+    ]);
+  } finally {
+    process.getuid = originalGetuid;
+  }
+});
+
+test('non-macOS root process does not use macOS launchctl wrapper', () => {
+  const { commandForHome } = require('../src/collectors-claude');
+  const originalGetuid = process.getuid;
+  process.getuid = () => 0;
+  try {
+    const cmd = commandForHome('/tmp/claude', ['-p', '/usage'], '/home/mitch', {
+      platform: 'linux',
+    });
+    assert.equal(cmd.file, '/tmp/claude');
+    assert.deepEqual(cmd.args, ['-p', '/usage']);
+  } finally {
+    process.getuid = originalGetuid;
+  }
+});

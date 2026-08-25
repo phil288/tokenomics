@@ -235,6 +235,15 @@ Both `src/settings.js` and `src/web/pricing.js` define pricing matrices for Clau
 - Record durable knowledge: data contracts, environment variables, reset/baseline semantics, collector quirks, UI wiring expectations, test strategy, and operational constraints.
 - Do **not** add noisy changelog entries or temporary debugging notes. Capture what a future agent needs to know to work safely.
 - If no `AGENTS.md` update is needed for a change, explicitly verify that the existing guide already covers the behavior before finishing.
+- Claude quota fallback: `collectors.js` may use Headroom's `latest` quota mirror only when `claude /usage` has no usable quota lines **and** the Headroom reading is recent (`CLAUDE_QUOTA_FALLBACK_MAX_AGE_MS`, default 30 min). Stale Headroom quota mirrors are withheld and surfaced as `fallback_blocked: "headroom_stale"` so the UI does not show wrong live percentages.
+- Caveman zero totals are not always real zero usage. If Caveman is installed/active but neither `~/.claude/.caveman-history.jsonl` nor `~/.claude/.caveman-statusline-suffix` exists, collectors mark `telemetry_missing: true`; the UI must show that diagnostic instead of implying a valid zero-savings ledger.
+
+- Machine-wide RTK summaries may differ from per-user summaries when LaunchDaemon/service account can read only partial RTK state. `collectStatsRaw()` and the RTK/hero cards fall back to summed `users[].rtk` summaries when the aggregate `rtk.summary.total_saved` is lower; backend marks `rtk.summary_source: "users"` when that path is used.
+
+- Claude quota polling must run against authenticated Claude Code CLI for one configured home. Logged-in GUI Claude app not enough for machine-wide LaunchDaemon; `collectors-claude.js` probes per-home Claude app binaries, and when Tokenomics runs as root it executes Claude as the home owner via `sudo -n -H -u <user>` instead only spoofing `HOME`. Auth failures like `claude CLI not logged in` should be shown explicitly.
+
+- For Keychain-backed Claude auth from root LaunchDaemon, `sudo -u <user>` alone is insufficient; use the user's bootstrap session too: `launchctl asuser <uid> sudo -n -H -u <user> <claude-bin> -p /usage`.
+- RTK per-user fallback must run both before and after baseline application; otherwise live cards can look correct while history/trend snapshots still see the lower service-account aggregate.
 
 ## 4. How Data Collection Works
 
