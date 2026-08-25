@@ -117,7 +117,7 @@ test('root LaunchDaemon executes Claude as the configured home user', () => {
   }
 });
 
-test('non-macOS root process does not use macOS launchctl wrapper', () => {
+test('Linux root service executes Claude as the configured home user', () => {
   const { commandForHome } = require('../src/collectors-claude');
   const originalGetuid = process.getuid;
   process.getuid = () => 0;
@@ -125,8 +125,8 @@ test('non-macOS root process does not use macOS launchctl wrapper', () => {
     const cmd = commandForHome('/tmp/claude', ['-p', '/usage'], '/home/mitch', {
       platform: 'linux',
     });
-    assert.equal(cmd.file, '/tmp/claude');
-    assert.deepEqual(cmd.args, ['-p', '/usage']);
+    assert.equal(cmd.file, '/usr/sbin/runuser');
+    assert.deepEqual(cmd.args, ['-u', 'mitch', '--', '/tmp/claude', '-p', '/usage']);
   } finally {
     process.getuid = originalGetuid;
   }

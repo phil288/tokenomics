@@ -4,6 +4,15 @@ import { headroomHealthPill } from './cards-headroom.js';
 import { computePace, paceMarker, paceNote, HOUR, DAY } from './pace.js';
 import { trackPace } from './notify.js';
 
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function quotaBar(label, pctVal, resetSecs, inlineNote = '', windowSecs = null) {
   const v = pctVal || 0;
   const pace = computePace({ usedPct: v, windowSecs, remainingSecs: resetSecs });
@@ -50,23 +59,28 @@ export function modelWindowLabel(slug) {
 export const POLL_WARN_SECS = 5 * 60;
 export const POLL_STALE_SECS = 30 * 60;
 
-// Freshness line for the Claude card: when the quota numbers were last read
-// from the `claude /usage` poll (`polled_at`), not when the dashboard last
-// refreshed.
 function quotaSource(d) {
-  if (d && d.fallback === 'headroom') return 'Headroom fallback';
-  return 'claude /usage';
+  return d && d.fallback === 'headroom' ? 'Headroom fallback' : 'claude /usage';
+}
+
+function sourceDetails(d) {
+  if (!d || d.fallback === 'headroom') return '';
+  const details = [];
+  if (d.source_home) details.push(d.source_home);
+  if (d.source_bin) details.push(d.source_bin);
+  return details.length ? ` · ${details.join(' · ')}` : '';
 }
 
 function sourceNote(d) {
   const source = quotaSource(d);
-  const cls = d && d.fallback === 'headroom' ? 'warn' : 'note';
-  const extra = d && d.fallback === 'headroom'
-    ? ' · fallback because claude /usage is unavailable'
-    : '';
-  return `<div class="poll-age ${cls}" title="Quota source: ${source}${extra}">Source: ${source}${extra}</div>`;
+  const detail = sourceDetails(d);
+  const cls = d && d.fallback === 'headroom' ? 'warn' : 'fresh';
+  return `<div class="poll-age ${cls}" title="Quota source: ${esc(source)}${esc(detail)}">Source: ${esc(source)}${esc(detail)}</div>`;
 }
 
+// Freshness line for the Claude card: when the quota numbers were last read
+// from the `claude /usage` poll (`polled_at`), not when the dashboard last
+// refreshed.
 export function polledFreshness(polledAt, source = 'claude /usage') {
   const t = polledAt ? Date.parse(polledAt) : NaN;
   if (Number.isNaN(t)) {
@@ -75,19 +89,13 @@ export function polledFreshness(polledAt, source = 'claude /usage') {
   const age = Math.max(0, (Date.now() - t) / 1000);
   const level = age >= POLL_STALE_SECS ? 'stale' : age >= POLL_WARN_SECS ? 'warn' : 'fresh';
   const title = new Date(t).toLocaleString();
-  return `<div class="poll-age ${level}" title="Last polled via ${source}: ${title}">`
+  return `<div class="poll-age ${level}" title="Last polled via ${esc(source)}: ${esc(title)}">`
     + `Updated ${timeAgo(polledAt)}</div>`;
 }
 
 // Claude plan usage (session / weekly limits). Sourced from Claude Code's own
 // `/usage` slash command (`claude -p "/usage"`, polled on a slow timer because
 // each call costs ~11s) — not from Headroom's mirror of the quota API.
-//
-// Anthropic reports the 7-day "all models" window plus zero or more per-model
-// 7-day windows (e.g. seven_day_sonnet, seven_day_opus, seven_day_fable) —
-// which models get their own window depends on the account's plan/tier, so we
-// discover them from whatever `seven_day_<model>` keys Headroom actually sent
-// rather than hardcoding a single model.
 export function renderClaude(d) {
   // Note: a `d.error` alone must NOT short-circuit — the poller keeps the last
   // good `latest` and flags the failure, so we still render the (stale) bars
@@ -109,11 +117,10 @@ export function renderClaude(d) {
       ? `; stale Headroom fallback ignored${d.fallback_polled_at ? ` (last ${timeAgo(d.fallback_polled_at)})` : ''}`
       : '';
     const msg = d.error
-      ? `Claude quota unavailable (${d.error}${blocked})`
+      ? esc(`Claude quota unavailable (${d.error}${blocked})`)
       : 'Claude quota poll pending (claude /usage)';
     return `
       ${headroomHealthPill(d.health)}
-      ${sourceNote(d)}
       <div class="${d.error ? 'err' : 'note'}">${msg}</div>
       ${polledFreshness(d.polled_at, quotaSource(d))}
       <div class="rows">${userBreakdown(d.users || [], 'claude')}</div>

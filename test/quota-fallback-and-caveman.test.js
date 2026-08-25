@@ -20,7 +20,8 @@ test('Claude Headroom fallback is age-limited so stale quota mirrors are withhel
 test('Claude card labels quota source and reports stale fallback suppression', () => {
   assert.match(CLAUDE_CARD_JS, /function quotaSource\(d\)/);
   assert.match(CLAUDE_CARD_JS, /Headroom fallback/);
-  assert.match(CLAUDE_CARD_JS, /Source: \$\{source\}/);
+  assert.match(CLAUDE_CARD_JS, /function sourceDetails\(d\)/);
+  assert.match(CLAUDE_CARD_JS, /Source: \$\{esc\(source\)\}\$\{esc\(detail\)\}/);
   assert.match(CLAUDE_CARD_JS, /stale Headroom fallback ignored/);
   assert.match(CLAUDE_CARD_JS, /polledFreshness\(d\.polled_at, quotaSource\(d\)\)/);
 });

@@ -75,6 +75,7 @@ export function renderCav(d, lastUsed) {
   if (!d) return '<div class="err">No Caveman data</div>';
   return `
     ${cavemanPill(d)}
+    ${d.telemetry_missing ? '<div class="note">Caveman is installed, but no telemetry ledger is being written at <code>~/.claude/.caveman-history.jsonl</code>.</div>' : ''}
     <div class="big" style="color:var(--caveman)">${ht(d.total_saved_tokens || 0)}</div>
     <div class="big-label">est. tokens saved</div>
     <div class="rows">

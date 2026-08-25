@@ -21,6 +21,7 @@ const CLAUDE_TIMEOUT_MS = 60000;
 
 let claudeCache = { stale: true };  // last good (or empty) result
 let claudePolling = false;          // re-entry guard
+let workingClaude = null;           // { home, bin } after the first successful poll
 
 function fileExists(p) {
   try { return fs.existsSync(p); } catch { return false; }
@@ -51,9 +52,10 @@ function claudeCandidates(home) {
 }
 
 function userForHome(home, platform = process.platform) {
-  if (platform !== 'darwin') return null;
   const user = path.basename(home || '');
-  return user && home === path.join('/Users', user) ? user : null;
+  if (platform === 'darwin') return user && home === path.join('/Users', user) ? user : null;
+  if (platform === 'linux') return user && home === path.join('/home', user) ? user : null;
+  return null;
 }
 
 function uidForHome(home) {
@@ -79,6 +81,12 @@ function commandForHome(bin, args, home, opts = {}) {
     return {
       file: '/usr/bin/sudo',
       args: ['-n', '-H', '-u', user, bin, ...args],
+    };
+  }
+  if (platform === 'linux' && user && isRoot) {
+    return {
+      file: '/usr/sbin/runuser',
+      args: ['-u', user, '--', bin, ...args],
     };
   }
   return { file: bin, args };
@@ -231,35 +239,46 @@ async function claudeAuthStatus(bin, home) {
   }
 }
 
+async function runClaudeUsageCandidate(home, bin) {
+  const auth = await claudeAuthStatus(bin, home);
+  if (auth && auth.loggedIn === false) {
+    return { error: `${home}: claude CLI not logged in` };
+  }
+  const { err, stdout, stderr } = await runClaude(bin, ['-p', '/usage'], home);
+  if (err && !stdout) {
+    return { error: `${home}: ${stderr.trim() || err.message}` };
+  }
+  if (!stdout) {
+    return { error: `${home}: no output from claude CLI` };
+  }
+  const parsed = parseClaudeUsage(stdout);
+  if (!parsed.error) return { ...parsed, home, bin };
+  return { error: `${home}: ${parsed.error}` };
+}
+
 async function runClaudeUsageForHome(home) {
   const errors = [];
   for (const bin of claudeCandidates(home)) {
-    const auth = await claudeAuthStatus(bin, home);
-    if (auth && auth.loggedIn === false) {
-      errors.push(`${home}: claude CLI not logged in`);
-      continue;
-    }
-    const { err, stdout, stderr } = await runClaude(bin, ['-p', '/usage'], home);
-    if (err && !stdout) {
-      errors.push(`${home}: ${stderr.trim() || err.message}`);
-      continue;
-    }
-    if (!stdout) {
-      errors.push(`${home}: no output from claude CLI`);
-      continue;
-    }
-    const parsed = parseClaudeUsage(stdout);
-    if (!parsed.error) return { ...parsed, home, bin };
-    errors.push(`${home}: ${parsed.error}`);
+    const parsed = await runClaudeUsageCandidate(home, bin);
+    if (!parsed.error) return parsed;
+    errors.push(parsed.error);
   }
   return { error: errors.join('; ') || `${home}: no usable claude CLI` };
 }
 
 async function runClaudeUsage() {
+  if (workingClaude) {
+    const parsed = await runClaudeUsageCandidate(workingClaude.home, workingClaude.bin);
+    if (!parsed.error) return parsed;
+    workingClaude = null;
+  }
   const errors = [];
   for (const home of configuredHomes()) {
     const parsed = await runClaudeUsageForHome(home);
-    if (!parsed.error) return parsed;
+    if (!parsed.error) {
+      workingClaude = { home: parsed.home, bin: parsed.bin };
+      return parsed;
+    }
     errors.push(parsed.error);
   }
   return { error: errors.join('; ') || 'no usable claude CLI' };
