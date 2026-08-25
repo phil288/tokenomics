@@ -6,23 +6,18 @@ import {
   renderHero, renderRTK, renderCav, renderCursor,
   renderAntigravity, renderClaude, renderHdr, renderUpdateBanner,
 } from './cards.js';
-import { drawRTKChart, fetchHistory, initHistoryControls } from './charts.js';
+import { drawRTKChart, fetchHistory, initHistoryControls, renderHistory } from './charts.js';
 import { fetchActivity, initActivity, initDashboardTabs, paintActivity } from './activity.js';
 import { initAnalysis, fetchAnalysis } from './analysis.js';
 import { initTheme } from './theme.js';
 import { initLayout, reapplyCardLayout } from './layout.js';
 import { initSettings, initSettingsAndPricing } from './settings.js';
 
-function render(stats) {
-  state.lastStats = stats;
-  renderHero(stats);
-  const lu = stats.last_used || {};
-  document.getElementById('rtk').innerHTML = renderRTK(stats.rtk, lu.rtk);
-  document.getElementById('cav').innerHTML = renderCav(stats.caveman, lu.caveman);
-
-  // Per-card visibility (settings-driven). Cursor & Antigravity are also hidden
-  // when their collector reports `disabled` (collection skipped server-side).
-  const vis = stats.visibility || {};
+// Apply settings-driven visibility to every Overview card. Cursor & Antigravity
+// are also hidden when their collector reports `disabled` (collection skipped
+// server-side). Trends is dashboard-level history and is intentionally not
+// controlled by provider-card visibility.
+function applyOverviewVisibility(vis = {}, stats = {}) {
   const setCard = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? 'block' : 'none'; };
   setCard('rtk-card', vis.rtk !== false);
   setCard('cav-card', vis.caveman !== false);
@@ -31,13 +26,49 @@ function render(stats) {
 
   const cursorVisible = vis.cursor !== false && !(stats.cursor && stats.cursor.disabled);
   setCard('cursor-card', cursorVisible);
+  const agyVisible = vis.antigravity !== false && !(stats.antigravity && stats.antigravity.disabled);
+  setCard('antigravity-card', agyVisible);
+
+  return { cursorVisible, agyVisible };
+}
+
+// Settings POSTs return the saved configuration before a fresh stats collection
+// completes. Apply that response immediately so unchecked sources disappear
+// without waiting for the next /api/stats or SSE frame.
+export function applySavedProviderVisibility(config) {
+  if (!config) {
+    return;
+  }
+
+  const visibility = {
+    rtk: config.RTK_ENABLED !== false,
+    caveman: config.CAVEMAN_ENABLED !== false,
+    claude: config.CLAUDE_ENABLED !== false,
+    headroom: config.HEADROOM_ENABLED !== false,
+    cursor: config.CURSOR_ENABLED !== false,
+    antigravity: config.ANTIGRAVITY_ENABLED !== false,
+  };
+  const stats = state.lastStats || { visibility };
+  stats.visibility = visibility;
+  applyOverviewVisibility(visibility, stats);
+  if (state.lastStats) renderHero(state.lastStats);
+  renderHistory(visibility);
+  reapplyCardLayout();
+}
+
+function render(stats) {
+  state.lastStats = stats;
+  renderHero(stats);
+  const lu = stats.last_used || {};
+  document.getElementById('rtk').innerHTML = renderRTK(stats.rtk, lu.rtk);
+  document.getElementById('cav').innerHTML = renderCav(stats.caveman, lu.caveman);
+
+  const { cursorVisible, agyVisible } = applyOverviewVisibility(stats.visibility || {}, stats);
   if (cursorVisible) {
     const curEl = document.getElementById('cur');
     if (curEl) curEl.innerHTML = renderCursor(stats.cursor);
   }
 
-  const agyVisible = vis.antigravity !== false && !(stats.antigravity && stats.antigravity.disabled);
-  setCard('antigravity-card', agyVisible);
   if (agyVisible) {
     const agyEl = document.getElementById('agy');
     if (agyEl) agyEl.innerHTML = renderAntigravity(stats.antigravity);
@@ -75,6 +106,7 @@ function render(stats) {
 
   renderVersion(stats.version);
   renderUpdate(stats.version);
+  renderHistory();
 
   const d = new Date(stats.timestamp);
   document.getElementById('ts').textContent = 'updated ' + d.toLocaleTimeString();

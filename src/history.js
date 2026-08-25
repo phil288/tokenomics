@@ -13,14 +13,16 @@ function loadHistory() {
   try {
     if (fs.existsSync(HISTORY_FILE)) {
       const raw = fs.readFileSync(HISTORY_FILE, 'utf8');
-      history = raw.split('\n').filter(l => l.trim()).map(l => {
+      const loaded = raw.split('\n').filter(l => l.trim()).map(l => {
         try { return JSON.parse(l); } catch { return null; }
       }).filter(Boolean);
-      if (history.length > HISTORY_MAX) history = history.slice(-HISTORY_MAX);
+      const capped = loaded.length > HISTORY_MAX ? loaded.slice(-HISTORY_MAX) : loaded;
+      history.length = 0;
+      for (const row of capped) history.push(row);
     }
   } catch (err) {
     console.error('Failed to load history:', err.message);
-    history = [];
+    history.length = 0;
   }
 }
 
@@ -116,7 +118,10 @@ function compactSnapshot(stats) {
 function recordSnapshot(stats) {
   const row = compactSnapshot(stats);
   history.push(row);
-  if (history.length > HISTORY_MAX) history = history.slice(-HISTORY_MAX);
+  if (history.length > HISTORY_MAX) {
+    history.splice(0, history.length - HISTORY_MAX);
+  }
+
   persistHistory();
 }
 

@@ -50,7 +50,7 @@
       <div class="hero-num" id="hero-num">—</div>
       <div>
         <div class="hero-label">total tokens saved</div>
-        <div class="hero-label" style="opacity:0.7">across RTK · Caveman · Headroom</div>
+        <div class="hero-label" id="hero-sources" style="opacity:0.7">across enabled sources</div>
       </div>
     </div>
     <div class="hero-chips" id="hero-chips"></div>
@@ -117,18 +117,20 @@
       <div class="card graph-card" id="trends-card">
         <div class="card-header">
           <span class="card-title">Trends</span>
-          <div class="hist-range" id="hist-range">
-            <button class="rbtn rng" data-min="60">1h</button>
-            <button class="rbtn rng active" data-min="360">6h</button>
-            <button class="rbtn rng" data-min="1440">24h</button>
-            <button class="rbtn rng" data-min="0">all</button>
+          <div class="hist-range" id="hist-range" role="radiogroup" aria-label="History range">
+            <button type="button" class="rbtn rng" data-min="60" role="radio" aria-checked="false">1h</button>
+            <button type="button" class="rbtn rng active" data-min="360" role="radio" aria-checked="true">6h</button>
+            <button type="button" class="rbtn rng" data-min="1440" role="radio" aria-checked="false">24h</button>
+            <button type="button" class="rbtn rng" data-min="0" role="radio" aria-checked="false">all</button>
           </div>
         </div>
-        <div class="hist-title">Tokens saved over time <span>RTK · Caveman · Headroom</span></div>
+        <div class="hist-title">Tokens saved over time <span id="history-saved-sources">enabled sources</span></div>
         <div class="hist-canvas"><canvas id="hc-saved"></canvas></div>
-        <div class="divider"></div>
-        <div class="hist-title">Cost over time <span>raw · real · saved ($)</span></div>
-        <div class="hist-canvas"><canvas id="hc-cost"></canvas></div>
+        <div id="headroom-cost-trend">
+          <div class="divider"></div>
+          <div class="hist-title">Cost over time <span>raw · real · saved ($)</span></div>
+          <div class="hist-canvas"><canvas id="hc-cost"></canvas></div>
+        </div>
       </div>
     </div>
   </div>

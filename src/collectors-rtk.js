@@ -17,7 +17,9 @@ function listSnapShareDirs() {
 }
 
 function rtkDataHomes() {
-  const customHome = settings.RTK_DATA_HOME || process.env.RTK_DATA_HOME;
+  // An explicit process environment override must win over the persisted UI
+  // setting. Tests and service launchers use it to pin an isolated data home.
+  const customHome = process.env.RTK_DATA_HOME || settings.RTK_DATA_HOME;
   if (customHome) return [customHome];
   const candidates = [
     process.env.XDG_DATA_HOME,

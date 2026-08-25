@@ -88,26 +88,34 @@ export function renderCav(d, lastUsed) {
 }
 
 export function renderHero(stats) {
+  const visibility = stats.visibility || {};
   const rtkSaved = (stats.rtk && stats.rtk.summary) ? (stats.rtk.summary.total_saved || 0) : 0;
   const cavSaved = (stats.caveman) ? (stats.caveman.total_saved_tokens || 0) : 0;
   const hdrLife = stats.headroom && stats.headroom.savings && stats.headroom.savings.lifetime;
   const hdrSaved = hdrLife ? (hdrLife.tokens_saved || 0) : 0;
-  const total = rtkSaved + cavSaved + hdrSaved;
 
   const lu = stats.last_used || {};
   const sub = (iso) => `<span class="chip-sub" title="${iso ? new Date(iso).toLocaleString() : 'no recorded activity'}">used ${timeAgo(iso)}</span>`;
+  const sources = [
+    { key: 'rtk', label: 'RTK', value: rtkSaved, color: 'var(--rtk)', lastUsed: lu.rtk },
+    { key: 'caveman', label: 'Caveman', value: cavSaved, color: 'var(--caveman)', lastUsed: lu.caveman },
+    { key: 'headroom', label: 'Headroom', value: hdrSaved, color: 'var(--headroom)', lastUsed: lu.headroom },
+  ].filter(source => visibility[source.key] !== false);
+  const total = sources.reduce((sum, source) => sum + source.value, 0);
+  const sourceNames = sources.map(source => source.label);
 
   document.getElementById('hero-num').textContent = ht(total);
-  document.getElementById('hero-chips').innerHTML = `
-    <div class="chip" style="border-left-color:var(--rtk)">
-      <span class="chip-label">RTK</span><span class="chip-val" style="color:var(--rtk)">${ht(rtkSaved)}</span>${sub(lu.rtk)}
-    </div>
-    <div class="chip" style="border-left-color:var(--caveman)">
-      <span class="chip-label">Caveman</span><span class="chip-val" style="color:var(--caveman)">${ht(cavSaved)}</span>${sub(lu.caveman)}
-    </div>
-    <div class="chip" style="border-left-color:var(--headroom)">
-      <span class="chip-label">Headroom</span><span class="chip-val" style="color:var(--headroom)">${ht(hdrSaved)}</span>${sub(lu.headroom)}
-    </div>
-    ${heroUsers(stats.users || [])}`;
-}
+  const sourceLabel = document.getElementById('hero-sources');
+  if (sourceLabel) {
+    sourceLabel.textContent = sourceNames.length
+      ? `across ${sourceNames.join(' · ')}`
+      : 'no token-saving sources enabled';
+  }
 
+  const sourceChips = sources.map(source => `
+    <div class="chip" style="border-left-color:${source.color}">
+      <span class="chip-label">${source.label}</span><span class="chip-val" style="color:${source.color}">${ht(source.value)}</span>${sub(source.lastUsed)}
+    </div>`).join('');
+
+  document.getElementById('hero-chips').innerHTML = sourceChips + heroUsers(stats.users || [], visibility);
+}

@@ -1,7 +1,7 @@
 // ============ SETTINGS MODAL & LOGIC ============
 import { PRICING, derivePricingRates } from './pricing.js';
 import { setCardLayout, hasSavedLayout, applyLayout, setAnalysisLayout } from './layout.js';
-import { manualRefresh } from './main.js';
+import { manualRefresh, applySavedProviderVisibility } from './main.js';
 import { fetchHistory } from './charts.js';
 import {
   setPaceAlertConfig, paceAlertConfig, requestNotificationPermission, notificationPermission,
@@ -390,6 +390,11 @@ export function initSettings() {
           result.settings.PRICING.forEach(item => PRICING.push(item));
         }
         if (result.settings) {
+          try {
+            applySavedProviderVisibility(result.settings || body);
+          } catch (err) {
+            console.error('Failed to apply saved provider visibility:', err);
+          }
           const before = paceAlertConfig();
           applyPaceAlertSettings(result.settings);
           const after = paceAlertConfig();
@@ -422,6 +427,10 @@ export async function initSettingsAndPricing() {
       PRICING.length = 0;
       config.PRICING.forEach(item => PRICING.push(item));
     }
+    if (config) {
+      applySavedProviderVisibility(config);
+    }
+
     // Alerts must be live from page load, not only after the modal is opened.
     if (config) applyPaceAlertSettings(config);
     // server is the source of truth; fall back to the local mirror if empty
