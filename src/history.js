@@ -17,7 +17,8 @@ function loadHistory() {
         try { return JSON.parse(l); } catch { return null; }
       }).filter(Boolean);
       const capped = loaded.length > HISTORY_MAX ? loaded.slice(-HISTORY_MAX) : loaded;
-      history.splice(0, history.length, ...capped);
+      history.length = 0;
+      for (const row of capped) history.push(row);
     }
   } catch (err) {
     console.error('Failed to load history:', err.message);

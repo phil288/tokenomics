@@ -12,7 +12,11 @@ async function loadCharts(suffix) {
   const transformed = chartsSource
     .replace(
       "import { tc, ht, usdFull } from './format.js';",
-      () => "const tc = () => '#888'; const ht = String; const usdFull = String;",
+      () => "const tc = () => '#888'; const ht = String; const usdFull = String; const modelRaw = () => 0; const modelWeighted = () => 0; const modelUsd = () => 0; const modelUsdRaw = () => 0;",
+    )
+    .replace(
+      "import { modelRaw, modelWeighted, modelUsd, modelUsdRaw } from './pricing.js';",
+      '',
     )
     .replace(
       "import { state } from './state.js';",
@@ -106,16 +110,17 @@ test('Chart.js receives timestamped points and the selected range bounds', async
   ]);
 });
 
-test('range controls keep visual and pressed states synchronized', () => {
+test('range controls use radio semantics and keep visual and checked states synchronized', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
+  assert.match(html, /id="hist-range" role="radiogroup" aria-label="History range"/);
   for (const minutes of ['60', '360', '1440', '0']) {
     assert.match(
       html,
-      new RegExp(`<button type="button" class="rbtn rng(?: active)?" data-min="${minutes}" aria-pressed="(?:true|false)">`),
+      new RegExp(`<button type="button" class="rbtn rng(?: active)?" data-min="${minutes}" role="radio" aria-checked="(?:true|false)">`),
     );
   }
-  assert.match(chartsSource, /btn\.setAttribute\('aria-pressed', String\(active\)\)/);
-  assert.match(chartsSource, /b\.setAttribute\('aria-pressed', 'false'\)/);
-  assert.match(chartsSource, /btn\.setAttribute\('aria-pressed', 'true'\)/);
+  assert.match(chartsSource, /btn\.setAttribute\('aria-checked', String\(active\)\)/);
+  assert.match(chartsSource, /b\.setAttribute\('aria-checked', 'false'\)/);
+  assert.match(chartsSource, /btn\.setAttribute\('aria-checked', 'true'\)/);
 });

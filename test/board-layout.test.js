@@ -38,7 +38,7 @@ test('the remaining cards live in the three columns below', () => {
 
 test('the board is a 3-column grid with the top row pinned explicitly', () => {
   const board = CSS.slice(CSS.indexOf('.board {'), CSS.indexOf('.board-col {'));
-  assert.match(board, /grid-template-columns: repeat\(3, 1fr\)/);
+  assert.match(board, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
   // Hiding a disabled quota card must not pull a lower column into the top row,
   // so each top card and each column is placed by hand on wide viewports.
   const pinned = CSS.slice(CSS.indexOf('@media (min-width: 1101px)'), CSS.indexOf('@media (max-width: 1100px)'));
@@ -51,8 +51,8 @@ test('the board is a 3-column grid with the top row pinned explicitly', () => {
 });
 
 test('narrow viewports fall back to auto placement', () => {
-  assert.match(CSS, /@media \(max-width: 1100px\) \{\s*\.board \{\s*grid-template-columns: 1fr 1fr;/);
-  assert.match(CSS, /@media \(max-width: 680px\) \{\s*\.board \{\s*grid-template-columns: 1fr;/);
+  assert.match(CSS, /@media \(max-width: 1100px\) \{\s*\.board \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(CSS, /@media \(max-width: 680px\) \{\s*\.board \{\s*grid-template-columns: minmax\(0, 1fr\);/);
 });
 
 test('a saved free-drag layout is untouched by the reordering', () => {

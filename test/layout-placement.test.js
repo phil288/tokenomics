@@ -47,6 +47,24 @@ test('placement falls back below occupied content on a narrow board', async () =
   );
 });
 
+test('layout keeps saved cards on their row when the viewport changes', () => {
+  const layout = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'layout.js'), 'utf8');
+  assert.match(layout, /const viewportWidth = document\.documentElement\?\.clientWidth \|\| window\.innerWidth/);
+  assert.match(layout, /Keep saved cards on their saved row/);
+  assert.match(layout, /Number\(pos\.x\) \+ width <= boardWidth/);
+  assert.match(layout, /Number\(pos\.x\) \+ width > boardWidth/);
+  assert.match(layout, /const missing = visible\.filter\(el => !map\[el\.id\]\)/,
+    'only new widgets should receive collision-based placement');
+  assert.match(layout, /const x = Math\.max\(0, Math\.min\(Number\(pos\.x\)/,
+    'saved cards should be clamped horizontally instead of moved vertically');
+});
+
+test('overview grid tracks can shrink without forcing horizontal overflow', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'index.css'), 'utf8');
+  assert.match(css, /\.board\s*\{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.board > \.card\s*\{[\s\S]*min-width: 0/);
+});
+
 test('layout integration reserves saved positions for currently hidden cards', () => {
   const layout = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'layout.js'), 'utf8');
   assert.match(layout, /const elements = b\.ids\(\)[\s\S]*const visible = elements/);

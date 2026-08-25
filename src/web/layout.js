@@ -51,15 +51,50 @@ function placeUnmappedVisible(b) {
     .filter(Boolean);
   const visible = elements
     .filter(isVisible);
-  const missing = visible.filter(el => !map[el.id]);
-  if (!missing.length) return false;
-
-  const boardWidth = Math.max(MIN_W, b.el.clientWidth || b.el.getBoundingClientRect().width || MIN_W);
+  const boardRect = b.el.getBoundingClientRect();
+  const measuredWidth = b.el.clientWidth || boardRect.width || MIN_W;
+  const viewportWidth = document.documentElement?.clientWidth || window.innerWidth || measuredWidth;
+  const availableWidth = Math.max(1, viewportWidth - boardRect.left);
+  const boardWidth = Math.min(measuredWidth, availableWidth);
   const columnWidth = Math.max(MIN_W, Math.floor((boardWidth - 32) / 3));
+  const positionWidth = el => Number(map[el.id]?.w) || el.offsetWidth || columnWidth;
+  const fitsBoard = el => {
+    const pos = map[el.id];
+    if (!pos) return false;
+    const width = positionWidth(el);
+    return Number(pos.x) >= 0 && Number(pos.x) + width <= boardWidth;
+  };
+
+  // Keep saved cards on their saved row. If a viewport change makes one wider
+  // than the available board or pushes it past the right edge, clamp only its
+  // width/x. Sending it through findOpenPosition() would move it to the bottom
+  // after every refresh, even when its original top-row position is usable.
+  let changed = false;
+  for (const el of visible) {
+    const pos = map[el.id];
+    if (!pos || fitsBoard(el)) continue;
+    const savedWidth = Number(pos.w);
+    const width = Number.isFinite(savedWidth) && savedWidth > 0
+      ? Math.min(boardWidth, savedWidth)
+      : Math.min(boardWidth, el.offsetWidth || columnWidth);
+    const x = Math.max(0, Math.min(Number(pos.x) || 0, Math.max(0, boardWidth - width)));
+    if (x !== Number(pos.x) || width !== savedWidth) {
+      map[el.id] = { ...pos, x: Math.round(x), w: Math.round(width) };
+      changed = true;
+    }
+  }
+
+  // Only widgets without a saved position are placed into a new slot.
+  const missing = visible.filter(el => !map[el.id]);
+  if (!missing.length) return changed;
+
   const mappedWidths = elements
     .map(el => map[el.id] && Number(map[el.id].w))
     .filter(width => Number.isFinite(width) && width >= MIN_W);
   const autoWidth = Math.min(boardWidth, mappedWidths.length ? Math.min(columnWidth, ...mappedWidths) : columnWidth);
+  const widthFor = el => {
+    return autoWidth;
+  };
   const measureHeight = (el, width) => {
     const liveHeight = el.offsetHeight || el.scrollHeight;
     if (liveHeight) return Math.max(MIN_H, liveHeight);
@@ -84,6 +119,7 @@ function placeUnmappedVisible(b) {
     const pos = map[el.id];
     if (!pos) return [];
     const width = Number(pos.w) || el.offsetWidth || autoWidth;
+    if (Number(pos.x) < 0 || Number(pos.x) + width > boardWidth) return [];
     return [{
       x: Number(pos.x) || 0,
       y: Number(pos.y) || 0,
@@ -93,16 +129,23 @@ function placeUnmappedVisible(b) {
   });
 
   for (const el of missing) {
-    el.style.width = autoWidth + 'px';
-    const height = measureHeight(el, autoWidth);
+    const width = widthFor(el);
+    el.style.width = width + 'px';
+    const height = measureHeight(el, width);
     const { x, y } = findOpenPosition({
       boardWidth,
-      width: autoWidth,
+      width,
       height,
       occupied,
     });
-    map[el.id] = { x: Math.round(x), y: Math.round(y), w: Math.round(autoWidth) };
-    occupied.push({ x, y, w: autoWidth, h: height });
+    const savedHeight = Number(map[el.id]?.h);
+    map[el.id] = {
+      x: Math.round(x),
+      y: Math.round(y),
+      w: Math.round(width),
+      ...(Number.isFinite(savedHeight) ? { h: savedHeight } : {}),
+    };
+    occupied.push({ x, y, w: width, h: height });
   }
   return true;
 }

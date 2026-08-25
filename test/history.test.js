@@ -5,6 +5,7 @@
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
+const { execFileSync } = require('node:child_process');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -128,4 +129,21 @@ test('loadHistory refreshes the captured array in place', () => {
 
   assert.strictEqual(require('../src/history').history, captured);
   assert.deepEqual(captured.map(row => row.rtk.saved), [8, 9, 10]);
+});
+
+test('loadHistory handles a large configured cap without spreading rows into a call', () => {
+  const largeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-hist-large-'));
+  const rowCount = 150_000;
+  fs.writeFileSync(
+    path.join(largeDir, 'history.jsonl'),
+    Array.from({ length: rowCount }, (_, t) => JSON.stringify({ t })).join('\n') + '\n',
+  );
+  const historyModule = path.join(__dirname, '..', 'src', 'history.js');
+  const script = `const { history } = require(${JSON.stringify(historyModule)}); process.stdout.write(String(history.length));`;
+  const loaded = execFileSync(process.execPath, ['-e', script], {
+    env: { ...process.env, TOKENOMICS_DATA_DIR: largeDir, HISTORY_MAX: String(rowCount) },
+    encoding: 'utf8',
+  });
+
+  assert.equal(loaded, String(rowCount));
 });

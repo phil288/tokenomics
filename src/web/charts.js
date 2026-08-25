@@ -1,5 +1,6 @@
 // ---- RTK daily chart + history trend charts (Chart.js) ----
 import { tc, ht, usdFull } from './format.js';
+import { modelRaw, modelWeighted, modelUsd, modelUsdRaw } from './pricing.js';
 import { state } from './state.js';
 
 let rtkChart = null;
@@ -238,6 +239,30 @@ function liveHistoryRow(stats, previousHr = {}) {
   const life = savings.lifetime || {};
   const session = savings.display_session || {};
   const latest = stats.claude?.latest || {};
+  const models = {};
+  let totalUsd = 0;
+  let totalRawUsd = 0;
+  let totalWtd = 0;
+  let totalRaw = 0;
+
+  for (const [name, model] of Object.entries(headroom.window_tokens?.by_model || {})) {
+    const raw = modelRaw(model);
+    if (!raw || name === '<synthetic>') continue;
+    const usd = modelUsd(name, model) || 0;
+    const rawUsd = modelUsdRaw(name, model) || 0;
+    const weighted = modelWeighted(model);
+    models[name] = {
+      raw,
+      wtd: weighted,
+      usd: +usd.toFixed(4),
+      rawUsd: +rawUsd.toFixed(4),
+      saved: +(rawUsd - usd).toFixed(4),
+    };
+    totalUsd += usd;
+    totalRawUsd += rawUsd;
+    totalWtd += weighted;
+    totalRaw += raw;
+  }
 
   return {
     t,
@@ -255,8 +280,14 @@ function liveHistoryRow(stats, previousHr = {}) {
       savedUsd: life.compression_savings_usd || 0,
       requests: life.requests || 0,
       savingsPct: session.savings_percent || 0,
+      raw: totalRaw,
+      wtd: totalWtd,
+      usd: +totalUsd.toFixed(4),
+      rawUsd: +totalRawUsd.toFixed(4),
+      saved: +(totalRawUsd - totalUsd).toFixed(4),
       q5: latest.five_hour?.utilization_pct || 0,
       q7: latest.seven_day?.utilization_pct || 0,
+      models,
     },
   };
 }
@@ -436,6 +467,18 @@ export function drawLine(id, timestamps, datasets, yfmt, tipfmt, y1fmt, xBounds)
   histCharts[id] = new globalThis.Chart(cv.getContext('2d'), cfg);
 }
 
+function clearHistoryChart(id) {
+  if (histCharts[id]) {
+    histCharts[id].destroy();
+    delete histCharts[id];
+  }
+  const canvas = document.getElementById(id);
+  const ctx = canvas?.getContext('2d');
+  if (ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
 export function renderHistory(visibilityOverride) {
   captureLiveHistory();
   const now = Date.now();
@@ -462,17 +505,7 @@ export function renderHistory(visibilityOverride) {
     // Do not leave a pre-reset or pre-toggle chart painted with stale provider
     // datasets while there are too few current points to redraw it.
     for (const id of ['hc-saved', 'hc-cost']) {
-      if (histCharts[id]) {
-        histCharts[id].destroy();
-        delete histCharts[id];
-      }
-      const canvas = document.getElementById(id);
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
-      }
+      clearHistoryChart(id);
     }
 
     return;
@@ -489,17 +522,23 @@ export function renderHistory(visibilityOverride) {
         : rows.map(r => r.hr?.savedTokens || 0),
   }));
 
+  if (!savedSources.length) {
+    clearHistoryChart('hc-saved');
+  }
+
   // 1. tokens saved — all three are genuine cumulative tokens-saved totals now
   // (Headroom from proxy_savings.json), so they share one axis and one unit.
-  drawLine(
-    'hc-saved',
-    timestamps,
-    savedSources.map(source => ds(source.data, source.color, source.label)),
-    ht,
-    c => ` ${c.dataset.label}: ${ht(c.raw)}`,
-    undefined,
-    xBounds,
-  );
+  if (savedSources.length) {
+    drawLine(
+      'hc-saved',
+      timestamps,
+      savedSources.map(source => ds(source.data, source.color, source.label)),
+      ht,
+      c => ` ${c.dataset.label}: ${ht(c.raw)}`,
+      undefined,
+      xBounds,
+    );
+  }
 
   // 2. cost — raw/real are live window-telemetry usage cost; saved is the
   // authoritative Headroom compression savings (proxy_savings.json, USD).
@@ -524,14 +563,14 @@ export function initHistoryControls() {
     // restore active state from saved range
     const active = normalizeHistoryRange(btn.dataset.min, -1) === histRangeMin;
     btn.classList.toggle('active', active);
-    btn.setAttribute('aria-pressed', String(active));
+    btn.setAttribute('aria-checked', String(active));
     btn.addEventListener('click', () => {
       document.querySelectorAll('.rng').forEach(b => {
         b.classList.remove('active');
-        b.setAttribute('aria-pressed', 'false');
+        b.setAttribute('aria-checked', 'false');
       });
       btn.classList.add('active');
-      btn.setAttribute('aria-pressed', 'true');
+      btn.setAttribute('aria-checked', 'true');
       histRangeMin = normalizeHistoryRange(btn.dataset.min);
       try { localStorage.setItem('ltm-range', String(histRangeMin)); } catch { }
       renderHistory();

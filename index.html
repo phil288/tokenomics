@@ -117,11 +117,11 @@
       <div class="card graph-card" id="trends-card">
         <div class="card-header">
           <span class="card-title">Trends</span>
-          <div class="hist-range" id="hist-range">
-            <button type="button" class="rbtn rng" data-min="60" aria-pressed="false">1h</button>
-            <button type="button" class="rbtn rng active" data-min="360" aria-pressed="true">6h</button>
-            <button type="button" class="rbtn rng" data-min="1440" aria-pressed="false">24h</button>
-            <button type="button" class="rbtn rng" data-min="0" aria-pressed="false">all</button>
+          <div class="hist-range" id="hist-range" role="radiogroup" aria-label="History range">
+            <button type="button" class="rbtn rng" data-min="60" role="radio" aria-checked="false">1h</button>
+            <button type="button" class="rbtn rng active" data-min="360" role="radio" aria-checked="true">6h</button>
+            <button type="button" class="rbtn rng" data-min="1440" role="radio" aria-checked="false">24h</button>
+            <button type="button" class="rbtn rng" data-min="0" role="radio" aria-checked="false">all</button>
           </div>
         </div>
         <div class="hist-title">Tokens saved over time <span id="history-saved-sources">enabled sources</span></div>
