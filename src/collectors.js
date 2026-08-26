@@ -49,14 +49,14 @@ async function collectLastUsed(headroom) {
   return { rtk: maxRtkLastUsed(), caveman, claude, headroom: headroomLastUsed(headroom) };
 }
 
-async function collectUsers() {
-  return Promise.all(configuredHomes().map(async home => {
+async function collectUserData() {
+  const entries = await Promise.all(configuredHomes().map(async home => {
     const [rtk, caveman, headroom] = await Promise.all([
       collectRTKForHome(home),
       collectCavemanForHome(home),
       collectHeadroomForHome(home),
     ]);
-    return {
+    const user = {
       user: userLabel(home),
       home,
       rtk: rtk.summary || null,
@@ -73,7 +73,109 @@ async function collectUsers() {
           : 0,
       },
     };
+    return { user, rtk };
   }));
+  return {
+    users: entries.map(e => e.user),
+    rtkResults: entries.map(e => e.rtk),
+  };
+}
+
+async function collectUsers() {
+  return (await collectUserData()).users;
+}
+
+function emptyRtkSummary() {
+  return {
+    total_commands: 0,
+    total_input: 0,
+    total_output: 0,
+    total_saved: 0,
+    total_time_ms: 0,
+    avg_savings_pct: 0,
+    avg_time_ms: 0,
+  };
+}
+
+function finalizeRtkSummary(summary) {
+  summary.avg_savings_pct = summary.total_input
+    ? (summary.total_saved / summary.total_input) * 100
+    : 0;
+  summary.avg_time_ms = summary.total_commands
+    ? Math.round(summary.total_time_ms / summary.total_commands)
+    : 0;
+  return summary;
+}
+
+function mergeRtkPeriodRows(results, period, keyName) {
+  const rows = new Map();
+  for (const result of results || []) {
+    for (const row of (result && result[period]) || []) {
+      const key = row && row[keyName];
+      if (!key) continue;
+      const cur = rows.get(key) || {
+        ...row,
+        commands: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        saved_tokens: 0,
+        total_time_ms: 0,
+      };
+      cur.commands += row.commands || 0;
+      cur.input_tokens += row.input_tokens || 0;
+      cur.output_tokens += row.output_tokens || 0;
+      cur.saved_tokens += row.saved_tokens || 0;
+      cur.total_time_ms += row.total_time_ms || 0;
+      if (row.week_end) cur.week_end = row.week_end;
+      rows.set(key, cur);
+    }
+  }
+  return [...rows.values()]
+    .map(row => ({
+      ...row,
+      savings_pct: row.input_tokens ? (row.saved_tokens / row.input_tokens) * 100 : 0,
+      avg_time_ms: row.commands ? Math.round(row.total_time_ms / row.commands) : 0,
+    }))
+    .sort((a, b) => String(a[keyName]).localeCompare(String(b[keyName])));
+}
+
+function mergeUserRtkResults(results) {
+  const summary = emptyRtkSummary();
+  let sources = 0;
+  for (const result of results || []) {
+    const rtk = result && result.summary;
+    if (!rtk) continue;
+    sources += 1;
+    summary.total_commands += rtk.total_commands || 0;
+    summary.total_input += rtk.total_input || 0;
+    summary.total_output += rtk.total_output || 0;
+    summary.total_saved += rtk.total_saved || 0;
+    summary.total_time_ms += rtk.total_time_ms || 0;
+  }
+  if (!sources) return null;
+  return {
+    summary: finalizeRtkSummary(summary),
+    daily: mergeRtkPeriodRows(results, 'daily', 'date'),
+    weekly: mergeRtkPeriodRows(results, 'weekly', 'week_start'),
+    monthly: mergeRtkPeriodRows(results, 'monthly', 'month'),
+    sources,
+  };
+}
+
+function applyUserRtkFallback(rtk, userRtkResults) {
+  if (!rtk || typeof rtk !== 'object') return rtk;
+  const userAggregate = mergeUserRtkResults(userRtkResults);
+  if (!userAggregate) return rtk;
+  const current = rtk.summary || {};
+  if ((current.total_saved || 0) >= userAggregate.summary.total_saved) return rtk;
+  return { ...rtk, ...userAggregate, install: rtk.install, summary_source: 'users' };
+}
+
+const QUOTA_FALLBACK_MAX_AGE_MS = Number(process.env.CLAUDE_QUOTA_FALLBACK_MAX_AGE_MS) || 30 * 60 * 1000;
+
+function isFreshEnough(iso, maxAgeMs = QUOTA_FALLBACK_MAX_AGE_MS) {
+  const t = iso ? Date.parse(iso) : NaN;
+  return !Number.isNaN(t) && Date.now() - t <= maxAgeMs;
 }
 
 // The Claude card renders from the `claude /usage` poll (cached, slow timer).
@@ -81,13 +183,30 @@ async function collectUsers() {
 // because the card shows them, but the quota windows are Claude's own.
 function buildClaude(users, headroom) {
   const cache = getClaudeCache() || {};
-  return { ...cache, users, health: (headroom && headroom.health) || null };
+  const hasCliQuota = cache.latest && Object.keys(cache.latest).length;
+  const headroomLatest = headroom && headroom.latest;
+  const headroomPolledAt = headroomLatest && headroomLatest.polled_at;
+  const canFallback = headroomLatest && isFreshEnough(headroomPolledAt);
+  const quota = hasCliQuota || !canFallback ? { ...cache } : {
+    ...cache,
+    latest: headroomLatest,
+    polled_at: headroomPolledAt || null,
+    stale: true,
+    fallback: 'headroom',
+  };
+  if (!hasCliQuota && headroomLatest && !canFallback) {
+    quota.fallback_blocked = 'headroom_stale';
+    quota.fallback_polled_at = headroomPolledAt || null;
+  }
+  return { ...quota, users, health: (headroom && headroom.health) || null };
 }
 
 async function collectStatsRaw() {
-  const [rtk, caveman, headroom, cursor, users] = await Promise.all([
-    collectRTK(), collectCaveman(), collectHeadroom(), collectCursor(), collectUsers()
+  let [rtk, caveman, headroom, cursor, userData] = await Promise.all([
+    collectRTK(), collectCaveman(), collectHeadroom(), collectCursor(), collectUserData()
   ]);
+  const { users, rtkResults } = userData;
+  rtk = applyUserRtkFallback(rtk, rtkResults);
   if (rtk && typeof rtk === 'object') rtk.users = users;
   if (caveman && typeof caveman === 'object') caveman.users = users;
   if (headroom && typeof headroom === 'object') headroom.users = users;
@@ -129,6 +248,8 @@ module.exports = {
   collectLastUsed,
   collectStats,
   collectStatsRaw,
+  mergeUserRtkResults,
+  applyUserRtkFallback,
   collectActivity,
   collectRtkTotals,
   parseProxyPerfLine,

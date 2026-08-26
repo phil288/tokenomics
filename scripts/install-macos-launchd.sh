@@ -1,6 +1,11 @@
 #!/bin/zsh
 set -euo pipefail
 
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "This installer only supports macOS launchd. Use your OS service manager instead." >&2
+  exit 1
+fi
+
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run with sudo: sudo $0" >&2
   exit 1
@@ -15,6 +20,7 @@ NODE_BIN="${NODE_BIN:-/usr/bin/env node}"
 PLIST="/Library/LaunchDaemons/com.tokenomics.dashboard.plist"
 
 mkdir -p "${TOKENOMICS_DIR}" "${TOKENOMICS_DATA_DIR}"
+
 rsync -a --delete \
   --exclude '.git' \
   --exclude 'data' \
@@ -33,17 +39,22 @@ cat > "${PLIST}" <<EOF
 <dict>
   <key>Label</key>
   <string>com.tokenomics.dashboard</string>
+
   <key>ProgramArguments</key>
   <array>
 EOF
+
 for arg in "${node_cmd[@]}"; do
   print "    <string>${arg}</string>" >> "${PLIST}"
 done
+
 cat >> "${PLIST}" <<EOF
     <string>${TOKENOMICS_DIR}/server.js</string>
   </array>
+
   <key>WorkingDirectory</key>
   <string>${TOKENOMICS_DIR}</string>
+
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>
@@ -57,10 +68,12 @@ cat >> "${PLIST}" <<EOF
     <key>TOKENOMICS_DATA_DIR</key>
     <string>${TOKENOMICS_DATA_DIR}</string>
   </dict>
+
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
+
   <key>StandardOutPath</key>
   <string>${TOKENOMICS_DATA_DIR}/tokenomics.log</string>
   <key>StandardErrorPath</key>

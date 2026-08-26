@@ -81,7 +81,7 @@ export function userBreakdown(users, kind) {
       value = `${ht(r.total_saved || 0)} saved`;
     } else if (kind === 'caveman') {
       const c = u.caveman || {};
-      const status = c.active ? (c.mode || 'active') : c.installed ? 'installed' : 'not installed';
+      const status = c.telemetry_missing ? 'telemetry missing' : c.active ? (c.mode || 'active') : c.installed ? 'installed' : 'not installed';
       value = `${status} · ${ht(c.total_saved_tokens || 0)} saved`;
     } else if (kind === 'claude') {
       const c = u.claude || {};

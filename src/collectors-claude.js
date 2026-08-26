@@ -1,6 +1,8 @@
+const fs = require('fs');
+const path = require('path');
 const { execFile } = require('child_process');
 const { settings } = require('./settings');
-const { EXEC_PATH } = require('./collector-utils');
+const { configuredHomes, EXEC_PATH } = require('./collector-utils');
 
 // ---- Claude plan usage (`claude /usage`) ----
 // Claude Code's own `/usage` slash command is the source of truth for the
@@ -19,6 +21,76 @@ const CLAUDE_TIMEOUT_MS = 60000;
 
 let claudeCache = { stale: true };  // last good (or empty) result
 let claudePolling = false;          // re-entry guard
+let workingClaude = null;           // { home, bin } after the first successful poll
+
+function fileExists(p) {
+  try { return fs.existsSync(p); } catch { return false; }
+}
+
+function findBundledClaude(home) {
+  if (process.platform !== 'darwin') return null;
+  const root = path.join(home, 'Library', 'Application Support', 'Claude', 'claude-code');
+  try {
+    return fs.readdirSync(root)
+      .map(version => path.join(root, version, 'claude.app', 'Contents', 'MacOS', 'claude'))
+      .filter(fileExists)
+      .sort()
+      .pop() || null;
+  } catch {
+    return null;
+  }
+}
+
+function claudeCandidates(home) {
+  const candidates = [
+    process.env.CLAUDE_BIN,
+    settings.CLAUDE_BIN,
+    findBundledClaude(home),
+    'claude',
+  ].filter(Boolean);
+  return [...new Set(candidates)];
+}
+
+function userForHome(home, platform = process.platform) {
+  const user = path.basename(home || '');
+  if (platform === 'darwin') return user && home === path.join('/Users', user) ? user : null;
+  if (platform === 'linux') return user && home === path.join('/home', user) ? user : null;
+  return null;
+}
+
+function uidForHome(home) {
+  try {
+    return fs.statSync(home).uid;
+  } catch {
+    return null;
+  }
+}
+
+function commandForHome(bin, args, home, opts = {}) {
+  const platform = opts.platform || process.platform;
+  const user = userForHome(home, platform);
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  if (platform === 'darwin' && user && isRoot) {
+    const uid = opts.uid === undefined ? uidForHome(home) : opts.uid;
+    if (Number.isInteger(uid)) {
+      return {
+        file: '/bin/launchctl',
+        args: ['asuser', String(uid), '/usr/bin/sudo', '-n', '-H', '-u', user, bin, ...args],
+      };
+    }
+    return {
+      file: '/usr/bin/sudo',
+      args: ['-n', '-H', '-u', user, bin, ...args],
+    };
+  }
+  if (platform === 'linux' && user && isRoot) {
+    return {
+      file: '/usr/sbin/runuser',
+      args: ['-u', user, '--', bin, ...args],
+    };
+  }
+  return { file: bin, args };
+}
 
 // "Current week (all models)" -> seven_day; "Current week (Fable)" ->
 // seven_day_fable; "Current session" -> five_hour. Keys match the shape the
@@ -142,14 +214,74 @@ function parseClaudeUsage(raw, now = Date.now()) {
   return { latest };
 }
 
-function runClaudeUsage() {
+function runClaude(bin, args, home, timeout = CLAUDE_TIMEOUT_MS) {
+  const cmd = commandForHome(bin, args, home);
   return new Promise((resolve) => {
-    execFile('claude', ['-p', '/usage'], {
-      timeout: CLAUDE_TIMEOUT_MS,
+    execFile(cmd.file, cmd.args, {
+      timeout,
       maxBuffer: 4 * 1024 * 1024,
-      env: { ...process.env, PATH: EXEC_PATH },
-    }, (err, stdout) => resolve(stdout || null));
+      env: {
+        ...process.env,
+        HOME: home,
+        XDG_CONFIG_HOME: path.join(home, '.config'),
+        PATH: EXEC_PATH,
+      },
+    }, (err, stdout, stderr) => resolve({ err, stdout: stdout || '', stderr: stderr || '' }));
   });
+}
+
+async function claudeAuthStatus(bin, home) {
+  const { stdout } = await runClaude(bin, ['auth', 'status'], home, 10000);
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+}
+
+async function runClaudeUsageCandidate(home, bin) {
+  const auth = await claudeAuthStatus(bin, home);
+  if (auth && auth.loggedIn === false) {
+    return { error: `${home}: claude CLI not logged in` };
+  }
+  const { err, stdout, stderr } = await runClaude(bin, ['-p', '/usage'], home);
+  if (err && !stdout) {
+    return { error: `${home}: ${stderr.trim() || err.message}` };
+  }
+  if (!stdout) {
+    return { error: `${home}: no output from claude CLI` };
+  }
+  const parsed = parseClaudeUsage(stdout);
+  if (!parsed.error) return { ...parsed, home, bin };
+  return { error: `${home}: ${parsed.error}` };
+}
+
+async function runClaudeUsageForHome(home) {
+  const errors = [];
+  for (const bin of claudeCandidates(home)) {
+    const parsed = await runClaudeUsageCandidate(home, bin);
+    if (!parsed.error) return parsed;
+    errors.push(parsed.error);
+  }
+  return { error: errors.join('; ') || `${home}: no usable claude CLI` };
+}
+
+async function runClaudeUsage() {
+  if (workingClaude) {
+    const parsed = await runClaudeUsageCandidate(workingClaude.home, workingClaude.bin);
+    if (!parsed.error) return parsed;
+    workingClaude = null;
+  }
+  const errors = [];
+  for (const home of configuredHomes()) {
+    const parsed = await runClaudeUsageForHome(home);
+    if (!parsed.error) {
+      workingClaude = { home: parsed.home, bin: parsed.bin };
+      return parsed;
+    }
+    errors.push(parsed.error);
+  }
+  return { error: errors.join('; ') || 'no usable claude CLI' };
 }
 
 async function pollClaude() {
@@ -160,13 +292,18 @@ async function pollClaude() {
   if (claudePolling) return;
   claudePolling = true;
   try {
-    const raw = await runClaudeUsage();
-    const parsed = raw ? parseClaudeUsage(raw) : { error: 'no output from claude CLI' };
+    const parsed = await runClaudeUsage();
     if (parsed.error) {
       // keep the last good value, just flag it
       claudeCache = { ...claudeCache, disabled: false, stale: true, error: parsed.error };
     } else {
-      claudeCache = { ...parsed, polled_at: new Date().toISOString(), stale: false };
+      claudeCache = {
+        ...parsed,
+        polled_at: new Date().toISOString(),
+        stale: false,
+        source_home: parsed.home,
+        source_bin: parsed.bin,
+      };
     }
   } catch (e) {
     claudeCache = { ...claudeCache, disabled: false, stale: true, error: e.message };
@@ -177,4 +314,13 @@ async function pollClaude() {
 
 function getClaudeCache() { return claudeCache; }
 
-module.exports = { pollClaude, parseClaudeUsage, parseResetAt, getClaudeCache };
+module.exports = {
+  pollClaude,
+  parseClaudeUsage,
+  parseResetAt,
+  getClaudeCache,
+  findBundledClaude,
+  claudeCandidates,
+  commandForHome,
+  uidForHome,
+};
