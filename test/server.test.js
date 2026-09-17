@@ -160,7 +160,9 @@ test('GET /api/settings returns config with pricing and visibility flags', async
 test('GET /api/cursor/token returns {token,source} and honours the CURSOR_ENABLED gate', async () => {
   // The server boots with CURSOR_ENABLED:false (fixture), so the gate short-
   // circuits to a null token regardless of any DB/env token on the host.
-  const res = await fetch(base + '/api/cursor/token');
+  const res = await fetch(base + '/api/cursor/token', {
+    headers: { 'X-Tokenomics-Reveal': 'token' },
+  });
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /application\/json/);
   const body = await res.json();

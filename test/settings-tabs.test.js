@@ -87,7 +87,8 @@ test('the cursor-token reveal button fetches the effective token from /api/curso
   // Revealing an empty token field pulls the stored (settings/env/DB) token so
   // the user can view a token they never typed in — but must not clobber text
   // they are editing (only fill when blank).
-  assert.match(SETTINGS_JS, /fetch\('\/api\/cursor\/token'\)/, 'reveal not wired to GET /api/cursor/token');
+  assert.match(SETTINGS_JS, /fetch\('\/api\/cursor\/token'/, 'reveal not wired to GET /api/cursor/token');
+  assert.match(SETTINGS_JS, /'X-Tokenomics-Reveal':\s*'token'/, 'reveal fetch must send the confirm header');
   assert.match(SETTINGS_JS, /if\s*\(!cursorTokenInput\.value\)/, 'must guard against clobbering a non-empty field');
 });
 
