@@ -4,7 +4,7 @@
 // "how tokens get saved, op by op" view. Counts + labels only: no tool persists
 // the actual prompt/response text, so there is nothing more to show per row.
 import { state } from './state.js';
-import { ht, timeAgo } from './format.js';
+import { ht, timeAgo, esc } from './format.js';
 import { rtkInstallPill, headroomHealthPill } from './cards.js';
 
 const SOURCE_META = {
@@ -41,12 +41,6 @@ function setFilterInUrl(f) {
   if (f && f !== 'all') url.searchParams.set('filter', f);
   else url.searchParams.delete('filter');
   history.replaceState(null, '', url); // no new history entry per filter click
-}
-
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
-  ));
 }
 
 function infoHtml(info) {

@@ -1,5 +1,29 @@
 // ---- formatting & small pure helpers ----
 
+// The single HTML escaper for the whole frontend. Every tool-derived string
+// (model names, error text, versions, usernames, file contents, API bodies)
+// MUST go through this before reaching innerHTML.
+//
+// NOTE: ht() below is a NUMBER formatter, not an escaper — on a string input
+// it falls through to String(n) and returns the value verbatim. It was being
+// used as if it escaped; it does not. Use esc() for anything text-shaped.
+//
+// The class covers ' as well as & < > " so single-quoted attributes are safe.
+export function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+// Escape a URL destined for an href. Escaping alone does not stop
+// `javascript:`/`data:` execution, so reject any non-http(s) scheme outright
+// and fall back to '#'.
+export function escUrl(u, fallback = '#') {
+  const raw = String(u == null ? '' : u).trim();
+  if (!/^https?:\/\//i.test(raw)) return esc(fallback);
+  return esc(raw);
+}
+
 // resolve a CSS custom property (theme color) by name, with a fallback
 export function tc(name) {
   return getComputedStyle(document.documentElement).getPropertyValue('--' + name).trim() || '#888';

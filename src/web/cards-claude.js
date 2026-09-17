@@ -1,17 +1,8 @@
-import { barColor, qpct, countdown, remainingTime, secsUntil, timeAgo } from './format.js';
+import { barColor, qpct, countdown, remainingTime, secsUntil, timeAgo, esc } from './format.js';
 import { userBreakdown } from './cards-common.js';
 import { headroomHealthPill } from './cards-headroom.js';
 import { computePace, paceMarker, paceNote, HOUR, DAY } from './pace.js';
 import { trackPace } from './notify.js';
-
-function esc(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 function quotaBar(label, pctVal, resetSecs, inlineNote = '', windowSecs = null) {
   const v = pctVal || 0;
@@ -20,7 +11,7 @@ function quotaBar(label, pctVal, resetSecs, inlineNote = '', windowSecs = null) 
   return `
     <div class="prog-group">
       <div class="prog-header">
-        <span class="prog-label">${label}${inlineNote ? ` <span class="prog-note">${inlineNote}</span>` : ''}</span>
+        <span class="prog-label">${esc(label)}${inlineNote ? ` <span class="prog-note">${esc(inlineNote)}</span>` : ''}</span>
         <span class="prog-pct" style="color:${barColor(v)}">${qpct(v)}%</span>
       </div>
       <div class="track"><div class="fill" style="width:${Math.min(v, 100)}%;background:${barColor(v)}"></div>${paceMarker(pace)}</div>

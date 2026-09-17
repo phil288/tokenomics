@@ -1,4 +1,4 @@
-import { ht, pct, usd, lastUsedRow, timeAgo } from './format.js';
+import { ht, pct, usd, lastUsedRow, timeAgo, esc } from './format.js';
 import { MODE_COLORS } from './pricing.js';
 import { userBreakdown, heroUsers } from './cards-common.js';
 
@@ -9,7 +9,7 @@ export function rtkInstallPill(inst) {
   if (inst.installed) {
     const col = 'var(--success, #3fb950)';
     const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
-    const sub = inst.version ? `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">v${inst.version}</span>` : '';
+    const sub = inst.version ? `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">v${esc(inst.version)}</span>` : '';
     return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}RTK installed${sub}</div>`;
   }
   const col = 'var(--danger, #f85149)';
@@ -45,7 +45,7 @@ function cavemanStatusPill(mode) {
   if (active) {
     const col = MODE_COLORS[mode] || 'var(--success, #3fb950)';
     const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
-    const sub = `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">${mode}</span>`;
+    const sub = `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">${esc(mode)}</span>`;
     return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}Caveman active${sub}</div>`;
   }
   const col = '#8b949e';
@@ -59,7 +59,7 @@ function cavemanPill(d) {
   if (d.active || /^(full|lite|ultra|wenyan|wenyan-lite|wenyan-ultra)$/i.test(mode)) {
     const col = MODE_COLORS[mode] || 'var(--success, #3fb950)';
     const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
-    const sub = `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">${mode}</span>`;
+    const sub = `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">${esc(mode)}</span>`;
     const label = d.source === 'install' ? 'Caveman installed' : 'Caveman active';
     return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}${label}${sub}</div>`;
   }

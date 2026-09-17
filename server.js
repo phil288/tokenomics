@@ -7,6 +7,7 @@ const { history, recordSnapshot, clearHistory } = require('./src/history');
 const { captureBaseline, clearBaseline, applyActivityBaseline } = require('./src/baseline');
 const analysis = require('./src/analysis');
 const { pollVersion } = require('./src/version');
+const { pollToolVersions } = require('./src/tool-versions');
 
 // On-demand deep-analysis routes (never in the SSE loop). Each handler gets the
 // parsed query params and returns a JSON-serializable payload; baseline
@@ -30,8 +31,53 @@ const CLAUDE_POLL_MS = Number(process.env.CLAUDE_POLL_MS) || 300000;
 // Tags change rarely + unauthenticated GitHub API is rate-limited, so the
 // update check runs on a slow timer (default 1h) out of the fast SSE loop.
 const VERSION_POLL_MS = Number(process.env.VERSION_POLL_MS) || 3600000;
+// RTK/Headroom release cadence is low; default every 2h keeps the check well
+// clear of GitHub's/PyPI's rate limits while still catching a release same-day.
+const TOOL_VERSIONS_POLL_MS = Number(process.env.TOOL_VERSIONS_POLL_MS) || 7200000;
 
 const clients = new Set();
+
+// ---- Cross-origin request guard ----
+// The dashboard has no auth: it relies on binding to loopback. That stops
+// remote attackers but NOT a page the user visits, which can reach
+// 127.0.0.1. A JSON body posted as Content-Type: text/plain is a CORS
+// "simple request" — no preflight — so without this check any website could
+// drive POST /api/settings (repointing HEADROOM_HEALTH_URL at a host it
+// controls) or read the Cursor JWT from GET /api/cursor/token.
+//
+// Rules: a request with no Origin is a non-browser client (curl, tests,
+// scripts) and is allowed; a browser-sent Origin must match the host we were
+// asked on. Bodies must additionally be application/json, which a simple
+// request cannot set.
+function sameOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;               // non-browser client
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;                          // unparseable Origin: refuse
+  }
+}
+
+function requiresJsonBody(req) {
+  const ct = req.headers['content-type'] || '';
+  return ct.split(';')[0].trim().toLowerCase() === 'application/json';
+}
+
+// Returns true when the request was rejected (response already sent).
+function rejectedCrossOrigin(req, res, { needsJsonBody = false } = {}) {
+  if (!sameOrigin(req)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Cross-origin request refused' }));
+    return true;
+  }
+  if (needsJsonBody && !requiresJsonBody(req)) {
+    res.writeHead(415, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+    return true;
+  }
+  return false;
+}
 
 async function pushStats() {
   if (clients.size === 0) return;
@@ -59,12 +105,14 @@ setInterval(recordHistory, HISTORY_INTERVAL_MS);
 setInterval(() => pollAntigravity().catch(err => console.error('Antigravity poll failed:', err)), ANTIGRAVITY_POLL_MS);
 setInterval(() => pollClaude().catch(err => console.error('Claude poll failed:', err)), CLAUDE_POLL_MS);
 setInterval(() => pollVersion().catch(err => console.error('Version poll failed:', err)), VERSION_POLL_MS);
+setInterval(() => pollToolVersions().catch(err => console.error('Tool version poll failed:', err)), TOOL_VERSIONS_POLL_MS);
 
 // Run initial history recording task on startup
 recordHistory().catch(err => console.error('Initial history record failed:', err));
 pollAntigravity().catch(err => console.error('Initial Antigravity poll failed:', err));
 pollClaude().catch(err => console.error('Initial Claude poll failed:', err));
 pollVersion().catch(err => console.error('Initial version poll failed:', err));
+pollToolVersions().catch(err => console.error('Initial tool version poll failed:', err));
 
 const server = http.createServer(async (req, res) => {
   // Match routes on the path only — a refresh carries the client's filter as a
@@ -151,6 +199,7 @@ const server = http.createServer(async (req, res) => {
     // touching the tools' own ledgers (fully reversible via DELETE /api/baseline).
     // UI-only confirmation header: the dashboard sends it after its confirm()
     // dialog, so a stray scripted POST cannot silently capture a new baseline.
+    if (rejectedCrossOrigin(req, res)) return;
     if (req.headers['x-tokenomics-reset-confirm'] !== 'manual') {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Reset requires the X-Tokenomics-Reset-Confirm: manual header' }));
@@ -164,6 +213,7 @@ const server = http.createServer(async (req, res) => {
   } else if (pathname === '/api/baseline' && req.method === 'DELETE') {
     // Restore the absolute (all-time) view: drop the reset baseline. Trend
     // history is not resurrected — only future readings return to raw totals.
+    if (rejectedCrossOrigin(req, res)) return;
     clearBaseline();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
@@ -172,6 +222,12 @@ const server = http.createServer(async (req, res) => {
     // Kept OUT of /api/settings so the JWT never rides the routine settings
     // fetch — the UI asks for it only when the user clicks reveal on an empty
     // field. Honours the CURSOR_ENABLED gate.
+    if (rejectedCrossOrigin(req, res)) return;
+    if (req.headers['x-tokenomics-reveal'] !== 'token') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Token reveal requires the X-Tokenomics-Reveal: token header' }));
+      return;
+    }
     if (getSettings().CURSOR_ENABLED === false) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ token: null, source: null }));
@@ -184,6 +240,7 @@ const server = http.createServer(async (req, res) => {
     // Validate a Cursor token against the live API. Body { token } is optional —
     // blank tests the effective (settings/env/DB) token, so the user can check
     // either a value they just typed OR the stored one before saving.
+    if (rejectedCrossOrigin(req, res, { needsJsonBody: true })) return;
     let body = '';
     let tooLarge = false;
     req.on('data', chunk => {
@@ -220,6 +277,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(getSettings()));
   } else if (pathname === '/api/settings' && req.method === 'POST') {
+    if (rejectedCrossOrigin(req, res, { needsJsonBody: true })) return;
     let body = '';
     let tooLarge = false;
     req.on('data', chunk => {
@@ -261,7 +319,6 @@ const server = http.createServer(async (req, res) => {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
     });
     res.write(':ok\n\n');
     clients.add(res);

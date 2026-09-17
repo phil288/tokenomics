@@ -1,5 +1,6 @@
 // ============ SETTINGS MODAL & LOGIC ============
 import { PRICING, derivePricingRates } from './pricing.js';
+import { esc } from './format.js';
 import { setCardLayout, hasSavedLayout, applyLayout, setAnalysisLayout } from './layout.js';
 import { manualRefresh, applySavedProviderVisibility } from './main.js';
 import { fetchHistory } from './charts.js';
@@ -113,10 +114,6 @@ async function loadSettingsUI() {
   }
 }
 
-// Prefix values come back from user-editable settings — escape them so a
-// stray quote/angle bracket can't break out of the value="" attribute.
-const escAttr = (s) => String(s)
-  .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 function applyDerivedRates(tr) {
   const rates = derivePricingRates(
@@ -132,7 +129,7 @@ function applyDerivedRates(tr) {
 function addPricingRow(prefix = '', cost = { in: 0, out: 0, cr: 0, cw5: 0, cw1: 0 }) {
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td><input type="text" class="px-prefix" value="${escAttr(prefix)}" placeholder="model-prefix"></td>
+    <td><input type="text" class="px-prefix" value="${esc(prefix)}" placeholder="model-prefix"></td>
     <td><input type="number" step="any" class="px-num px-in" value="${cost.in || 0}"></td>
     <td><input type="number" step="any" class="px-num px-out" value="${cost.out || 0}"></td>
     <td><input type="number" step="any" class="px-num px-cr" value="${cost.cr || 0}"></td>
@@ -186,7 +183,12 @@ export function initSettings() {
       // Never clobber text the user is editing; only fill when blank.
       if (!cursorTokenInput.value) {
         try {
-          const res = await fetch('/api/cursor/token');
+          // Explicit header so a bare cross-origin GET cannot reach the JWT
+              // (a simple request cannot set custom headers; this forces a
+              // preflight, which the server's origin check then rejects).
+              const res = await fetch('/api/cursor/token', {
+                headers: { 'X-Tokenomics-Reveal': 'token' },
+              });
           const { token, source } = await res.json();
           if (token && !cursorTokenInput.value) {
             cursorTokenInput.value = token;

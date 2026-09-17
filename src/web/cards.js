@@ -6,3 +6,4 @@ export { renderAntigravity } from './cards-antigravity.js';
 export { renderClaude, modelWindowLabel } from './cards-claude.js';
 export { renderHdr, headroomHealthPill } from './cards-headroom.js';
 export { renderUpdateBanner } from './cards-version.js';
+export { renderToolUpdatesBanner, toolUpdatesDismissKey } from './cards-version.js';

@@ -1,4 +1,5 @@
 import { usageBar } from './cards-common.js';
+import { esc } from './format.js';
 import { computePace, cycleFromRange, parseEpochMs } from './pace.js';
 
 // `alert` is off for the Total bar: it is max(auto, api), so whichever bar
@@ -49,7 +50,7 @@ function cursorBars(totalPct, autoPct, apiPct, cycle = null) {
 }
 
 export function renderCursor(d) {
-  if (!d || d.error) return `<div class="err">${d && d.error ? d.error : 'No Cursor data'}</div>`;
+  if (!d || d.error) return `<div class="err">${esc(d && d.error ? d.error : 'No Cursor data')}</div>`;
 
   const cycle = cursorCycle(d);
 
@@ -129,12 +130,12 @@ export function renderCursor(d) {
         </thead>
         <tbody>
           ${members.map(m => {
-            const name = m.name || m.email.split('@')[0];
-            const limitStr = m.monthlyLimitDollars ? `$${m.monthlyLimitDollars}` : '—';
+            const name = m.name || (m.email ? String(m.email).split('@')[0] : 'unknown');
+            const limitStr = m.monthlyLimitDollars ? `$${esc(m.monthlyLimitDollars)}` : '—';
             const memberSpendUsd = (m.spendCents || 0) / 100;
             return `
               <tr style="border-bottom: 1px solid rgba(255,255,255,0.02);">
-                <td style="padding: 6px 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90px;" title="${m.email}">${name}</td>
+                <td style="padding: 6px 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90px;" title="${esc(m.email || '')}">${esc(name)}</td>
                 <td style="padding: 6px 8px; text-align: right;">${m.fastPremiumRequests || 0}</td>
                 <td style="padding: 6px 8px; text-align: right; color: var(--cursor); font-weight: 600;">$${memberSpendUsd.toFixed(2)}</td>
                 <td style="padding: 6px 8px; text-align: right; opacity: 0.7;">${limitStr}</td>

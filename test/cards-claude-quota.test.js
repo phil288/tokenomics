@@ -82,8 +82,10 @@ function loadFreshness() {
   const src = CLAUDE_CARDS_JS
     .replace(/^import .*$/gm, '')
     .replace(/^export /gm, '');
-  const factory = new Function('timeAgo', `${src}\nreturn { polledFreshness, POLL_WARN_SECS, POLL_STALE_SECS };`);
-  return factory(() => 'X ago');
+  // esc() now lives in format.js (one shared escaper) rather than being
+  // redefined per module, so it has to be injected alongside timeAgo.
+  const factory = new Function('timeAgo', 'esc', `${src}\nreturn { polledFreshness, POLL_WARN_SECS, POLL_STALE_SECS };`);
+  return factory(() => 'X ago', (v) => String(v == null ? '' : v));
 }
 
 test('polledFreshness reports the claude /usage poll time, tiered by staleness', () => {

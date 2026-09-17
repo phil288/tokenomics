@@ -1739,6 +1739,8 @@ header h1 span {
   padding: 0 2px;
 }
 .update-banner .ub-dismiss:hover { color: var(--text); }
+.update-banner .ub-text.ub-rows { display: flex; flex-direction: column; gap: 4px; }
+.update-banner .ub-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* ---- app version pill (top-left, beside the title) ---- */
 .app-version {

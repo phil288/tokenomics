@@ -61,16 +61,28 @@ function loadSettings() {
       const raw = fs.readFileSync(SETTINGS_FILE, 'utf8');
       const parsed = JSON.parse(raw);
       settings = { ...settings, ...parsed };
+      secureSettingsFile();
     }
   } catch (err) {
     console.error('Failed to load settings:', err.message);
   }
 }
 
+// settings.json can hold CURSOR_ACCESS_TOKEN, so it must never be group- or
+// world-readable. `mode` only applies when the file is CREATED, so an install
+// that predates this (or a permissive umask) keeps its old bits — chmod the
+// existing file explicitly to repair those in place.
+function secureSettingsFile() {
+  try {
+    fs.chmodSync(SETTINGS_FILE, 0o600);
+  } catch { /* file may not exist yet, or live on a mode-less filesystem */ }
+}
+
 function saveSettings() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), { encoding: 'utf8', mode: 0o600 });
+    secureSettingsFile();
   } catch (err) {
     console.error('Failed to save settings:', err.message);
   }
@@ -89,6 +101,80 @@ function clampAlertPct(value, current) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return current;
   return Math.min(500, Math.round(n * 10) / 10);
+}
+
+// Settings arrive from POST /api/settings, which is unauthenticated. Every
+// value below is therefore untrusted input, not merely "what the user typed".
+
+// Only accept an actual string. The old code called .trim() after an
+// `!== undefined` check, so POST {"RTK_DATA_HOME": 123} threw mid-update —
+// and because saveSettings() runs at the END of updateSettings, fields applied
+// earlier in the same request were left in memory but never persisted, so RAM
+// and disk silently diverged.
+function cleanString(value, current) {
+  return typeof value === 'string' ? value.trim() : current;
+}
+
+// The health URL is fetched by the server every refresh, so an arbitrary value
+// is an SSRF primitive (cloud metadata, internal hosts) AND the delivery vector
+// for stored XSS, since the response body is rendered on the Headroom card.
+// Confine it to loopback, matching the shipped default and the documented
+// Headroom setup. Empty string is allowed: it disables the probe.
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+function cleanHealthUrl(value, current) {
+  if (typeof value !== 'string') return current;
+  const raw = value.trim();
+  if (!raw) return '';
+  let url;
+  try { url = new URL(raw); } catch { return current; }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return current;
+  if (!LOOPBACK_HOSTS.has(url.hostname)) return current;
+  return raw;
+}
+
+// PRICING was accepted on Array.isArray alone. priceFor() then destructures
+// each entry as [prefix, p]; a string entry destructures character-wise into
+// garbage rather than throwing, silently corrupting every cost figure.
+const PRICE_KEYS = ['in', 'out', 'cr', 'cw5', 'cw1'];
+
+function cleanPricing(value, current) {
+  if (!Array.isArray(value)) return current;
+  const rows = [];
+  for (const row of value) {
+    if (!Array.isArray(row) || row.length < 2) continue;
+    const [prefix, costs] = row;
+    if (typeof prefix !== 'string' || !prefix.trim()) continue;
+    if (!costs || typeof costs !== 'object') continue;
+    const clean = {};
+    for (const k of PRICE_KEYS) {
+      const n = Number(costs[k]);
+      clean[k] = Number.isFinite(n) && n >= 0 ? n : 0;
+    }
+    rows.push([prefix.trim(), clean]);
+  }
+  return rows.length ? rows : current;
+}
+
+// Layout maps are echoed back to the client and written to disk. Reject
+// __proto__/constructor keys and non-finite coordinates (which reach
+// `el.style.left = pos.x + 'px'`).
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function cleanLayout(value, current) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return current;
+  const out = Object.create(null);
+  for (const [id, pos] of Object.entries(value)) {
+    if (UNSAFE_KEYS.has(id)) continue;
+    if (!pos || typeof pos !== 'object' || Array.isArray(pos)) continue;
+    const clean = {};
+    for (const k of ['x', 'y', 'w', 'h']) {
+      const n = Number(pos[k]);
+      if (Number.isFinite(n)) clean[k] = n;
+    }
+    if (Object.keys(clean).length) out[id] = clean;
+  }
+  return { ...out };
 }
 
 function updateSettings(parsed) {

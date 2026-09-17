@@ -1,4 +1,4 @@
-import { ht, pct, usd, timeAgo } from './format.js';
+import { ht, pct, usd, timeAgo, esc } from './format.js';
 import { renderModels } from './cards-common.js';
 
 // Live up/down pill for the Headroom proxy, driven by collectors.js's /health
@@ -23,7 +23,7 @@ export function headroomHealthPill(h) {
     detail = h.error || 'not reachable';
   }
   const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px"></span>`;
-  const sub = detail ? `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">${detail}</span>` : '';
+  const sub = detail ? `<span style="opacity:0.7;font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px">${esc(detail)}</span>` : '';
   return `<div class="badge" style="background:${col}1a;color:${col};border:1px solid ${col}40">${dot}${label}${sub}</div>`;
 }
 

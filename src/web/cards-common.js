@@ -1,4 +1,4 @@
-import { ht, usdFull } from './format.js';
+import { ht, usdFull, esc } from './format.js';
 import { modelRaw, modelWeighted, modelUsd, modelUsdRaw } from './pricing.js';
 import { paceMarker, paceNote } from './pace.js';
 import { trackPace } from './notify.js';
@@ -36,7 +36,7 @@ export function renderModels(byModel) {
       return `
       <div class="mdl-block">
         <div class="mdl-block-head">
-          <span class="mdl-name">${short(e.name)}</span>
+          <span class="mdl-name">${esc(short(e.name))}</span>
           <span class="mdl-figs">${ht(e.raw)} → <b>${ht(e.weighted)}</b> <span class="mdl-disc">−${disc}%</span></span>
         </div>
         <div class="mdl-bar-track"><span class="mdl-bar" style="width:${(e.raw / max * 100).toFixed(0)}%;background:var(--muted)"></span></div>
@@ -60,14 +60,14 @@ export function usageBar(label, pctVal, sub, color = 'var(--cursor)', mb = 12, p
   return `
       <div class="prog-group" style="margin-bottom: ${mb}px;">
         <div class="prog-header" style="font-size: 13px; margin-bottom: 4px;">
-          <span class="prog-label" style="font-weight: 500;">${label}</span>
+          <span class="prog-label" style="font-weight: 500;">${esc(label)}</span>
           <span class="prog-pct" style="color:${color}; font-weight: 700;">${Math.round(pctVal)}%</span>
         </div>
         <div class="track" style="height: 6px; background: rgba(255,255,255,0.05);">
           <div class="fill" style="width:${Math.min(pctVal, 100)}%; background: ${color}; height: 100%; border-radius: 3px;"></div>
           ${paceMarker(pace)}
         </div>
-        <div class="prog-sub" style="font-size: 11px; margin-top: 4px; ${sub.style}">${sub.text}</div>
+        <div class="prog-sub" style="font-size: 11px; margin-top: 4px; ${sub.style}">${esc(sub.text)}</div>
         ${paceNote(pace)}
       </div>`;
 }
@@ -87,7 +87,7 @@ export function userBreakdown(users, kind) {
       const c = u.claude || {};
       value = c.has_quota ? 'quota polled' : c.headroom_state ? 'state only' : 'no state';
     }
-    return `<div class="row"><span class="row-label">${ht(u.user || 'user')}</span><span class="row-val">${ht(value)}</span></div>`;
+    return `<div class="row"><span class="row-label">${esc(u.user || 'user')}</span><span class="row-val">${esc(value)}</span></div>`;
   }).join('');
   return `<div class="divider"></div><div class="tcell-label" style="margin-bottom:6px">Per user</div>${rows}`;
 }
@@ -107,7 +107,7 @@ export function heroUsers(users, visibility = {}) {
     const hr = visibility.headroom !== false && u.headroom ? (u.headroom.tokens_saved || 0) : 0;
 
     return `<div class="chip" style="border-left-color:var(--muted)">
-      <span class="chip-label">${ht(u.user)}</span><span class="chip-val">${ht(rtk + cav + hr)}</span>
+      <span class="chip-label">${esc(u.user)}</span><span class="chip-val">${ht(rtk + cav + hr)}</span>
     </div>`;
   }).join('');
 }

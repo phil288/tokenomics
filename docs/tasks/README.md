@@ -9,3 +9,4 @@ decided *and rejected*, evidence, and what was deliberately left undone.
 | Date | Task | Status |
 |------|------|--------|
 | 2026-08-23 | [Claude quota from `claude /usage` instead of Headroom](2026-08-23-claude-usage-cli-quota-source.md) | done |
+| 2026-09-17 | [RTK / Headroom update notifications](2026-09-17-rtk-headroom-update-notifications.md) | done |

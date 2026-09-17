@@ -102,8 +102,12 @@ test('the Test-token button POSTs the field value to /api/cursor/test', () => {
 });
 
 test('pricing prefix values are attribute-escaped before templating', () => {
-  // User-editable prefixes are re-rendered into value="…" — must go through escAttr.
-  assert.match(SETTINGS_JS, /value="\$\{escAttr\(prefix\)\}"/, 'px-prefix must interpolate escAttr(prefix), not raw prefix');
+  // User-editable prefixes are re-rendered into value="…" — must be escaped.
+  // The old local escAttr helper omitted both ' and >; this now uses the single
+  // shared esc() from format.js (see test/xss.test.js for the escaper itself).
+  assert.match(SETTINGS_JS, /value="\$\{esc\(prefix\)\}"/, 'px-prefix must interpolate esc(prefix), not raw prefix');
+  assert.match(SETTINGS_JS, /import \{ esc \} from '\.\/format\.js'/, 'settings.js must import the shared esc');
+  assert.doesNotMatch(SETTINGS_JS, /const escAttr/, 'the incomplete local escAttr must be gone');
 });
 
 test('pricing rows recompute derived rates when Input or prefix changes', () => {

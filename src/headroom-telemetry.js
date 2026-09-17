@@ -44,7 +44,7 @@ function loadTelemetryState() {
 function persistTelemetryState() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(TELEMETRY_FILE, JSON.stringify(state));
+    fs.writeFileSync(TELEMETRY_FILE, JSON.stringify(state), { mode: 0o600 });
   } catch (err) {
     console.error('Headroom telemetry persist failed:', err.message);
   }

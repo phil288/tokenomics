@@ -5,6 +5,7 @@ import { state } from './state.js';
 import {
   renderHero, renderRTK, renderCav, renderCursor,
   renderAntigravity, renderClaude, renderHdr, renderUpdateBanner,
+  renderToolUpdatesBanner, toolUpdatesDismissKey,
 } from './cards.js';
 import { drawRTKChart, fetchHistory, initHistoryControls, renderHistory } from './charts.js';
 import { fetchActivity, initActivity, initDashboardTabs, paintActivity } from './activity.js';
@@ -106,6 +107,7 @@ function render(stats) {
 
   renderVersion(stats.version);
   renderUpdate(stats.version);
+  renderToolUpdates(stats.tool_versions);
   renderHistory();
 
   const d = new Date(stats.timestamp);
@@ -156,6 +158,25 @@ function renderUpdate(version) {
   const btn = document.getElementById('update-dismiss');
   if (btn) btn.addEventListener('click', () => {
     sessionStorage.setItem('update-dismissed', version.latest);
+    el.style.display = 'none';
+  });
+}
+
+// ---- RTK/Headroom tool-update banner ----
+// Dismissal is keyed by the set of (tool, latest) pairs so a further release
+// of either tool re-shows the banner even after the user dismissed an older combo.
+function renderToolUpdates(toolVersions) {
+  const el = document.getElementById('tool-update-banner');
+  if (!el) return;
+  const html = renderToolUpdatesBanner(toolVersions);
+  const key = toolUpdatesDismissKey(toolVersions);
+  const dismissed = key && sessionStorage.getItem('tool-update-dismissed') === key;
+  if (!html || dismissed) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.innerHTML = html;
+  el.style.display = 'flex';
+  const btn = document.getElementById('tool-update-dismiss');
+  if (btn) btn.addEventListener('click', () => {
+    sessionStorage.setItem('tool-update-dismissed', key);
     el.style.display = 'none';
   });
 }

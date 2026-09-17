@@ -151,7 +151,7 @@ function captureBaseline(rawStats, rtkTotals, now = Date.now()) {
   };
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(BASELINE_FILE, JSON.stringify(baseline));
+    fs.writeFileSync(BASELINE_FILE, JSON.stringify(baseline), { mode: 0o600 });
   } catch (e) {
     console.error('baseline persist failed:', e.message);
   }

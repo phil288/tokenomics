@@ -29,7 +29,7 @@ function loadHistory() {
 function persistHistory() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(HISTORY_FILE, history.map(r => JSON.stringify(r)).join('\n') + '\n');
+    fs.writeFileSync(HISTORY_FILE, history.map(r => JSON.stringify(r)).join('\n') + '\n', { mode: 0o600 });
   } catch (e) {
     console.error('history persist failed:', e.message);
   }
@@ -131,7 +131,7 @@ function clearHistory() {
   history.length = 0;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(HISTORY_FILE, '');
+    fs.writeFileSync(HISTORY_FILE, '', { mode: 0o600 });
   } catch (e) {
     console.error('history clear failed:', e.message);
   }

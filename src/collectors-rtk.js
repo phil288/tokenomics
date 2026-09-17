@@ -21,8 +21,11 @@ function rtkDataHomes() {
   // setting. Tests and service launchers use it to pin an isolated data home.
   const customHome = process.env.RTK_DATA_HOME || settings.RTK_DATA_HOME;
   if (customHome) return [customHome];
+  // XDG_DATA_HOME describes THIS process's own data home. In machine-wide
+  // mode (TOKENOMICS_HOMES) that is the service account's, not any configured
+  // user's, so folding it in inflates the aggregate with the daemon's own data.
   const candidates = [
-    process.env.XDG_DATA_HOME,
+    process.env.TOKENOMICS_HOMES ? null : process.env.XDG_DATA_HOME,
     ...configuredHomes().map(home => path.join(home, '.local', 'share')),
     ...configuredHomes().map(home => path.join(home, 'Library', 'Application Support')),
     ...listSnapShareDirs(),

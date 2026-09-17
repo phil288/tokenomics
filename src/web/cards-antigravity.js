@@ -1,4 +1,5 @@
 import { usageBar } from './cards-common.js';
+import { esc } from './format.js';
 import { computePace, parseDuration, windowSecsFromLabel } from './pace.js';
 
 // ---- Antigravity usage by model group ----
@@ -34,7 +35,7 @@ export function renderAntigravity(d) {
   if (!d || d.disabled) return '';
   const hasGroups = d.groups && d.groups.length;
   if (!hasGroups) {
-    if (d.error) return `<div class="err">${d.error}</div>`;
+    if (d.error) return `<div class="err">${esc(d.error)}</div>`;
     return `<div class="loading">Fetching usage… first poll runs in the background (spawns agy).</div>`;
   }
 
@@ -49,13 +50,13 @@ export function renderAntigravity(d) {
     remainingSecs: parseDuration(lim && lim.refresh),
   });
   let html = '';
-  if (d.account) html += `<div class="prog-sub" style="opacity:0.7; margin-bottom:10px;">${d.account}</div>`;
+  if (d.account) html += `<div class="prog-sub" style="opacity:0.7; margin-bottom:10px;">${esc(d.account)}</div>`;
 
   for (const g of d.groups) {
     html += `
       <div style="margin-bottom:6px;">
-        <div style="font-weight:600; font-size:12px;">${agyGroupTitle(g.name)}</div>
-        ${g.models ? `<div class="prog-sub" style="opacity:0.55; font-size:11px;">${g.models}</div>` : ''}
+        <div style="font-weight:600; font-size:12px;">${esc(agyGroupTitle(g.name))}</div>
+        ${g.models ? `<div class="prog-sub" style="opacity:0.55; font-size:11px;">${esc(g.models)}</div>` : ''}
       </div>`;
     // Render exactly the limits agy reported for this group — no assumptions
     // about which windows exist (varies by tier).
@@ -72,7 +73,7 @@ export function renderAntigravity(d) {
   }
 
   if (d.stale) {
-    html += `<div class="prog-sub" style="opacity:0.5; font-size:11px;">⚠ showing last successful poll${d.error ? ` (${d.error})` : ''}</div>`;
+    html += `<div class="prog-sub" style="opacity:0.5; font-size:11px;">⚠ showing last successful poll${d.error ? ` (${esc(d.error)})` : ''}</div>`;
   } else if (d.polled_at) {
     html += `<div class="prog-sub" style="opacity:0.45; font-size:11px;">polled ${new Date(d.polled_at).toLocaleTimeString()}</div>`;
   }

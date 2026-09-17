@@ -383,9 +383,11 @@ function wireBoard(b) {
     const el = active.el;
     const map = mapFor(b.which);
     const prev = map[el.id] || {};
+    const parsedX = parseFloat(el.style.left);
+    const parsedY = parseFloat(el.style.top);
     map[el.id] = {
-      x: parseFloat(el.style.left) || prev.x || 0,
-      y: parseFloat(el.style.top) || prev.y || 0,
+      x: Number.isNaN(parsedX) ? (prev.x || 0) : parsedX,
+      y: Number.isNaN(parsedY) ? (prev.y || 0) : parsedY,
       w: Math.round(el.offsetWidth),
       h: (active === resize) ? Math.round(el.offsetHeight) : (prev.h || undefined),
     };

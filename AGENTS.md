@@ -301,6 +301,20 @@ Understanding how each source is resolved is crucial for debugging:
 - `src/history.js` reads `q5`/`q7` from `stats.claude.latest`.
 - Tests: `test/collectors-claude.test.js` (parsing, tz/DST/year-rollover, contributor-block exclusion, disabled gate), `test/cards-claude-quota.test.js` (card + server + history wiring contract).
 
+### 7. RTK / Headroom update check
+
+- `src/tool-versions.js` polls whether the locally installed `rtk` and `headroom` CLIs are behind their latest release — same normalize/compare/`pickLatestTag` helpers as the app's own self-update check (`src/version.js`), applied to two external tools instead of one.
+- **Current version**: `rtk --version` → `rtk 0.49.0`; `headroom --version` → `headroom, version 0.37.0`. Both parsed with a generic `(\d+\.\d+\.\d+)` match — don't assume either tool's exact prefix text stays fixed.
+- **Latest version sources are different per tool** — there is no single registry:
+  - RTK ships as a static binary with no package-manager listing; its GitHub repo is `rtk-ai/rtk` (found via `strings` on the binary → `github.com/rtk-ai/rtk`). Latest is the max semver tag from `GET /repos/rtk-ai/rtk/tags` (same unauthenticated GitHub API + `pickLatestTag` as the self-update check, since `/tags` isn't guaranteed sorted).
+  - Headroom installs via `pipx`/`pip` under the PyPI package name **`headroom-ai`** (not `headroom` — that's an unrelated package with its own version series). Latest is `info.version` from `GET https://pypi.org/pypi/headroom-ai/json`.
+- Each tool's check is gated on its dashboard-visibility setting (`RTK_ENABLED` / `HEADROOM_ENABLED`) so a disabled card doesn't spend a poll on a tool the user isn't tracking.
+- **Same polling discipline as the other slow pollers** (`pollAntigravity`, `pollClaude`, `pollVersion`): `pollToolVersions()` runs on its own timer (`TOOL_VERSIONS_POLL_MS`, default `7200000` = 2h — release cadence is low; keeps well clear of GitHub's/PyPI's unauthenticated rate limits) plus once at startup; `collectStats()` only ever reads the cache via `collectToolVersions()`, never does I/O inline.
+- On a failed poll, the previous cached result is kept and `stale`/`error` are set (mirrors `src/version.js`) — a bad poll never blanks a previously-known update notice.
+- Data reaches the client as **`stats.tool_versions`** = `{ rtk: {...}, headroom: {...} }`, each shaped like `src/version.js`'s cache (`current`, `latest`, `update_available`, `url`, `stale`, `error`) plus a `label`.
+- **UI**: a second banner (`#tool-update-banner`, same `.update-banner` styling as the self-update banner at `#update-banner`) renders one row per tool that has an update — `renderToolUpdatesBanner()` in `src/web/cards-version.js`, wired in `main.js`'s `renderToolUpdates()`. Dismissal is keyed by `toolUpdatesDismissKey()` (a sorted `tool:latest` join, sessionStorage `tool-update-dismissed`) so a further release of *either* tool re-shows the banner even after an older combo was dismissed — same pattern as the self-update banner's per-version dismissal key, generalized to a set.
+- Tests: `test/tool-versions.test.js` (TOOLS config shape, safe pre-poll default, `stats.tool_versions` wiring, server timer wiring, banner/CSS/index.html structural contract, `renderToolUpdatesBanner`/`toolUpdatesDismissKey` logic via a small CJS-load shim since `cards-version.js` is an ES module).
+
 ## 5. Development & Verification Workflow
 
 ### Running Locally
@@ -326,6 +340,8 @@ For testing different scenarios, you can override settings:
 - `HISTORY_MAX` (default: `5000`)
 - `ANTIGRAVITY_POLL_MS` (default: `300000` — how often the heavy `agy` `/usage` poll runs)
 - `CLAUDE_POLL_MS` (default: `300000` — how often the ~11 s `claude -p "/usage"` quota poll runs)
+- `VERSION_POLL_MS` (default: `3600000` — how often the app's own self-update check against GitHub tags runs)
+- `TOOL_VERSIONS_POLL_MS` (default: `7200000` — how often the RTK/Headroom update check runs)
 - `RTK_DATA_HOME` (forces a single RTK directory path)
 - `CAVEMAN_HISTORY_PATH` (overrides the caveman JSONL location — used by collector, activity feed, and Analysis reader; mainly for tests)
 - `HEADROOM_SAVINGS_PATH` / `HEADROOM_SUBSCRIPTION_STATE_PATH` / `HEADROOM_SESSION_STATS_PATH` / `HEADROOM_PROXY_LOG_PATH` (override Headroom file locations — settings **or** env; mainly for tests)

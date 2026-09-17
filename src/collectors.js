@@ -1,6 +1,7 @@
 const path = require('path');
 const { settings } = require('./settings');
 const { collectVersion } = require('./version');
+const { collectToolVersions } = require('./tool-versions');
 const { applyBaseline } = require('./baseline');
 const {
   REFRESH_MS,
@@ -222,7 +223,7 @@ async function collectStatsRaw() {
   return {
     rtk, caveman, headroom, cursor, claude: buildClaude(users, headroom),
     antigravity: getAntigravityCache(), users,
-    visibility, last_used: lastUsed, version: collectVersion(),
+    visibility, last_used: lastUsed, version: collectVersion(), tool_versions: collectToolVersions(),
     timestamp: new Date().toISOString(), refresh_ms: REFRESH_MS,
   };
 }

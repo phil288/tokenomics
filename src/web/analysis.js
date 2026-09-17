@@ -6,7 +6,7 @@
 // last stats snapshot the main loop already holds.
 import { state } from './state.js';
 import { hcBase, registerRedraw } from './charts.js';
-import { ht, usdFull, tc } from './format.js';
+import { ht, usdFull, tc, esc } from './format.js';
 import { isArranging } from './layout.js';
 
 // Categorical hues — reuse the dashboard's established brand colors so the
@@ -22,11 +22,6 @@ let uiWired = false;
 let rtkPeriod = 'daily';
 let hrUnit = 'tokens';
 
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"]/g, c => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
-  ));
-}
 const isVisible = () => document.getElementById('view-analysis')?.classList.contains('active');
 const setSince = (id, since) => {
   const el = document.getElementById(id);
