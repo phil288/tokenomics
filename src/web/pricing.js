@@ -41,18 +41,28 @@ export function modelWeighted(m) {
 // cache rates: read 0.1×, write-5m 1.25×, write-1h 2× of input price.
 // Mutated in place (length=0 + push) when settings update — keep the identity.
 export const PRICING = [
-  ['claude-opus-4', { in: 5, out: 25, cr: 0.50, cw5: 6.25, cw1: 10 }],
-  ['claude-sonnet-4', { in: 3, out: 15, cr: 0.30, cw5: 3.75, cw1: 6 }],
-  ['claude-haiku-4', { in: 1, out: 5, cr: 0.10, cw5: 1.25, cw1: 2 }],
-  ['claude-fable-5', { in: 10, out: 50, cr: 1.00, cw5: 12.50, cw1: 20 }],
+  ['claude-opus-5', { in: 5, out: 25, cr: 0.50, cw5: 6.25, cw1: 10 }],
+  ['claude-sonnet-5', { in: 2, out: 10, cr: 0.20, cw5: 2.50, cw1: 4 }],
+  ['claude-haiku-4-5', { in: 1, out: 5, cr: 0.10, cw5: 1.25, cw1: 2 }],
+  ['claude-fable-5-1', { in: 10, out: 50, cr: 1.00, cw5: 12.50, cw1: 20 }],
+  ['antigravity-3.8-flash', { in: 0.75, out: 3.75, cr: 0.075, cw5: 0.9375, cw1: 1.5 }],
+  ['gemini-3.8-flash', { in: 0.75, out: 3.75, cr: 0.075, cw5: 0.9375, cw1: 1.5 }],
+  ['antigravity-3.7-flash', { in: 0.75, out: 3.75, cr: 0.075, cw5: 0.9375, cw1: 1.5 }],
+  ['gemini-3.7-flash', { in: 0.75, out: 3.75, cr: 0.075, cw5: 0.9375, cw1: 1.5 }],
   ['antigravity-3.5-flash', { in: 1.5, out: 9, cr: 0.15, cw5: 1.875, cw1: 3.0 }],
   ['gemini-3.5-flash', { in: 1.5, out: 9, cr: 0.15, cw5: 1.875, cw1: 3.0 }],
   ['antigravity-3.1-pro', { in: 2, out: 12, cr: 0.20, cw5: 2.50, cw1: 4.0 }],
   ['gemini-3.1-pro', { in: 2, out: 12, cr: 0.20, cw5: 2.50, cw1: 4.0 }],
   ['cursor-opus', { in: 5, out: 25, cr: 0.50, cw5: 6.25, cw1: 10 }],
-  ['cursor-sonnet', { in: 3, out: 15, cr: 0.30, cw5: 3.75, cw1: 6 }],
+  ['cursor-sonnet', { in: 2, out: 10, cr: 0.20, cw5: 2.50, cw1: 4 }],
   ['cursor-haiku', { in: 1, out: 5, cr: 0.10, cw5: 1.25, cw1: 2 }],
   ['cursor-small', { in: 0.1, out: 0.5, cr: 0.01, cw5: 0.125, cw1: 0.2 }],
+  ['cursor-grok-4.6-fast', { in: 4, out: 12, cr: 1, cw5: 5, cw1: 8 }],
+  ['cursor-grok-4.6', { in: 2, out: 6, cr: 0.5, cw5: 2.5, cw1: 4 }],
+  ['cursor-grok-4.5-fast', { in: 4, out: 18, cr: 1, cw5: 5, cw1: 8 }],
+  ['cursor-grok-4.5', { in: 2, out: 6, cr: 0.5, cw5: 2.5, cw1: 4 }],
+  ['cursor-composer-2.5-fast', { in: 3, out: 15, cr: 0.5, cw5: 3.75, cw1: 6 }],
+  ['cursor-composer-2.5', { in: 0.5, out: 2.5, cr: 0.2, cw5: 0.625, cw1: 1 }],
 ];
 export function priceFor(name) {
   for (const [prefix, p] of PRICING) if (name.startsWith(prefix)) return p;

@@ -55,9 +55,30 @@ test('float rounding does not leak binary residues', () => {
   assert.equal(derivePricingRates('claude-sonnet-4', 3).cr, 0.3);
 });
 
+// Cursor's own xAI (Grok/Composer) models and Gemini 3.7/3.8 Flash's
+// introductory rate are billed at their real published rates, which don't
+// follow the generic 5×/6× output + 0.1/1.25/2× cache formula (e.g. Grok
+// 4.6 is in:2/out:6 — 3×, cache-read 0.25× input, not 0.1×; Gemini 3.7/3.8
+// Flash intro pricing is out:5× input, not Gemini's usual 6×). These are
+// legitimate hand-entered overrides, not drift — see AGENTS.md §3 "Keep
+// Cost & Model Lists in Sync".
+const FORMULA_EXEMPT_PREFIXES = new Set([
+  'cursor-grok-4.6-fast',
+  'cursor-grok-4.6',
+  'cursor-grok-4.5-fast',
+  'cursor-grok-4.5',
+  'cursor-composer-2.5-fast',
+  'cursor-composer-2.5',
+  'antigravity-3.8-flash',
+  'gemini-3.8-flash',
+  'antigravity-3.7-flash',
+  'gemini-3.7-flash',
+]);
+
 function assertMatchesDerived(rows, label) {
   assert.ok(Array.isArray(rows) && rows.length > 0, `${label} must be a non-empty array`);
   for (const [prefix, cost] of rows) {
+    if (FORMULA_EXEMPT_PREFIXES.has(prefix)) continue;
     const derived = derivePricingRates(prefix, cost.in);
     assert.deepEqual(
       { in: cost.in, out: cost.out, cr: cost.cr, cw5: cost.cw5, cw1: cost.cw1 },

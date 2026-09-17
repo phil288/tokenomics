@@ -28,8 +28,8 @@ const STATS = {
     window_tokens: {
       cache_reads: 1_000_000,
       by_model: {
-        // dated suffix is stripped to "opus-4" by shortModel
-        'claude-opus-4-20250101': {
+        // dated suffix is stripped to "opus-5" by shortModel
+        'claude-opus-5-20250101': {
           input: 1_000_000, output: 200_000, cache_reads: 1_000_000, cache_writes_total: 0,
         },
         // synthetic rows are excluded from the snapshot
@@ -73,9 +73,9 @@ test('compactSnapshot derives weighted/raw/real cost per model', () => {
   const { hr } = compactSnapshot(STATS);
 
   // synthetic row dropped, dated suffix shortened
-  assert.deepEqual(Object.keys(hr.models), ['opus-4']);
+  assert.deepEqual(Object.keys(hr.models), ['opus-5']);
 
-  const m = hr.models['opus-4'];
+  const m = hr.models['opus-5'];
   assert.equal(m.raw, 2_200_000);   // input+output+cache_reads+cache_writes
   assert.equal(m.wtd, 2_100_000);   // input + output*5 + cache_reads*0.1
   assert.equal(m.usd, 10.5);        // weighted $ (cache reads cheap)

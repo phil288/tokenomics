@@ -95,7 +95,7 @@ test('live SSE snapshots recompute Headroom window cost fields', async () => {
     headroom: {
       window_tokens: {
         by_model: {
-          'claude-opus-4': { input: 1_000_000, output: 200_000, cache_reads: 1_000_000, cache_writes_total: 0 },
+          'claude-opus-5': { input: 1_000_000, output: 200_000, cache_reads: 1_000_000, cache_writes_total: 0 },
         },
       },
     },
