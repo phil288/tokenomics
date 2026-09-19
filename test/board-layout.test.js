@@ -64,3 +64,17 @@ test('a saved free-drag layout is untouched by the reordering', () => {
   // .board-col collapses in arrange mode, so nesting depth never affects layout
   assert.match(CSS, /\.board\.arranged \.board-col \{\s*display: contents;/);
 });
+
+test('placeUnmappedVisible bails on an implausible board-width measurement', () => {
+  // A board mid-reflow (provider toggle, breakpoint crossing, first paint) can
+  // transiently measure narrower than MIN_W. Trusting that would "clamp" valid
+  // saved positions and auto-persist the corruption to disk. Guard must return
+  // before any clamp/persist logic runs.
+  const fn = LAYOUT_JS.slice(
+    LAYOUT_JS.indexOf('function placeUnmappedVisible'),
+    LAYOUT_JS.indexOf('\n}', LAYOUT_JS.indexOf('function placeUnmappedVisible')),
+  );
+  const guardIdx = fn.indexOf('if (boardWidth < MIN_W) return false;');
+  assert.notEqual(guardIdx, -1, 'width-sanity guard missing');
+  assert.ok(guardIdx < fn.indexOf('let changed = false;'), 'guard must run before the clamp loop');
+});

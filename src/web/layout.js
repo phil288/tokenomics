@@ -56,6 +56,12 @@ function placeUnmappedVisible(b) {
   const viewportWidth = document.documentElement?.clientWidth || window.innerWidth || measuredWidth;
   const availableWidth = Math.max(1, viewportWidth - boardRect.left);
   const boardWidth = Math.min(measuredWidth, availableWidth);
+  // A board mid-reflow (provider visibility just toggled, breakpoint just
+  // crossed, first paint before layout settles) can transiently measure
+  // narrower than any real layout. Trusting that would "clamp" perfectly
+  // valid saved positions and auto-persist the corruption. Bail until the
+  // board reports a plausible width.
+  if (boardWidth < MIN_W) return false;
   const columnWidth = Math.max(MIN_W, Math.floor((boardWidth - 32) / 3));
   const positionWidth = el => Number(map[el.id]?.w) || el.offsetWidth || columnWidth;
   const fitsBoard = el => {

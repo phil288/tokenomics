@@ -429,20 +429,12 @@ export async function initSettingsAndPricing() {
       PRICING.length = 0;
       config.PRICING.forEach(item => PRICING.push(item));
     }
-    if (config) {
-      applySavedProviderVisibility(config);
-    }
-
-    // Alerts must be live from page load, not only after the modal is opened.
-    if (config) applyPaceAlertSettings(config);
     // server is the source of truth; fall back to the local mirror if empty
     let layout = (config && config.CARD_LAYOUT) || {};
     if (!Object.keys(layout).length) {
       try { layout = JSON.parse(localStorage.getItem('ltm-card-layout') || '{}'); } catch { }
     }
     setCardLayout(layout);
-    // apply a saved layout immediately on load (wide viewports only)
-    if (hasSavedLayout() && window.innerWidth > 1100) applyLayout();
 
     // Analysis view panel order (source of truth: server, mirror: localStorage).
     let anLayout = (config && config.ANALYSIS_LAYOUT) || {};
@@ -450,6 +442,17 @@ export async function initSettingsAndPricing() {
       try { anLayout = JSON.parse(localStorage.getItem('ltm-analysis-layout') || '{}'); } catch { }
     }
     setAnalysisLayout(anLayout);
+
+    // Must run after the layout maps are populated: it triggers reapplyCardLayout(),
+    // which would otherwise seed/persist against an empty layout.
+    if (config) {
+      applySavedProviderVisibility(config);
+    }
+
+    // Alerts must be live from page load, not only after the modal is opened.
+    if (config) applyPaceAlertSettings(config);
+    // apply a saved layout immediately on load (wide viewports only)
+    if (hasSavedLayout() && window.innerWidth > 1100) applyLayout();
   } catch (err) {
     console.error('Failed to load dynamic pricing from settings:', err);
   }

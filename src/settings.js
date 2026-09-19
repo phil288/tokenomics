@@ -220,10 +220,10 @@ function updateSettings(parsed) {
     settings.PRICING = parsed.PRICING;
   }
   if (parsed.CARD_LAYOUT && typeof parsed.CARD_LAYOUT === 'object') {
-    settings.CARD_LAYOUT = parsed.CARD_LAYOUT;
+    settings.CARD_LAYOUT = cleanLayout(parsed.CARD_LAYOUT, settings.CARD_LAYOUT);
   }
   if (parsed.ANALYSIS_LAYOUT && typeof parsed.ANALYSIS_LAYOUT === 'object') {
-    settings.ANALYSIS_LAYOUT = parsed.ANALYSIS_LAYOUT;
+    settings.ANALYSIS_LAYOUT = cleanLayout(parsed.ANALYSIS_LAYOUT, settings.ANALYSIS_LAYOUT);
   }
   saveSettings();
   return getSettings();

@@ -62,9 +62,23 @@ test('updateSettings stores a CARD_LAYOUT object, ignores non-objects', () => {
 });
 
 test('updateSettings stores an ANALYSIS_LAYOUT object, ignores non-objects', () => {
-  const layout = { rtk: ['an-rtk-projects', 'an-rtk-types'], hr: ['an-hr-models'] };
+  const layout = { 'anb-rtk-projects': { x: 10, y: 20, w: 300 } };
   assert.deepEqual(updateSettings({ ANALYSIS_LAYOUT: layout }).ANALYSIS_LAYOUT, layout);
   assert.deepEqual(updateSettings({ ANALYSIS_LAYOUT: 'nope' }).ANALYSIS_LAYOUT, layout);
+});
+
+test('updateSettings sanitizes CARD_LAYOUT: drops unsafe keys and non-finite coordinates', () => {
+  const s = updateSettings({
+    CARD_LAYOUT: {
+      'rtk-card': { x: 10, y: NaN, w: 'nope', h: 40 },
+      '__proto__': { x: 1, y: 1 },
+      'cav-card': { x: Infinity, y: 5 },
+    },
+  });
+  assert.deepEqual(s.CARD_LAYOUT, {
+    'rtk-card': { x: 10, h: 40 },
+    'cav-card': { y: 5 },
+  });
 });
 
 test('pace alert settings default to off with 80/100 thresholds', () => {
