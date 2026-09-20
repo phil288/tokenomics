@@ -12,3 +12,4 @@ decided *and rejected*, evidence, and what was deliberately left undone.
 | 2026-09-17 | [RTK / Headroom update notifications](2026-09-17-rtk-headroom-update-notifications.md) | done |
 | 2026-09-17 | [Update model pricing table](2026-09-17-update-model-pricing.md) | done |
 | 2026-09-19 | [Fix widget layout randomly resetting](2026-09-19-widget-layout-random-reset.md) | done |
+| 2026-09-20 | [Widget layout reset — paint-only clamp](2026-09-20-widget-layout-reset-paint-only-clamp.md) | done |

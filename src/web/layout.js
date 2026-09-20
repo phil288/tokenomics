@@ -40,6 +40,22 @@ const isVisible = (el) => el && el.offsetParent !== null && el.style.display !==
 export const hasSavedLayout = () => Object.keys(state.cardLayout).length > 0;
 const boardHasSaved = (b) => b.ids().some(id => mapFor(b.which)[id]);
 
+// The width a board may lay panels out across. Clamped by the viewport so a
+// board that overflows the window can't hand out off-screen positions.
+function boardWidthOf(b) {
+  const boardRect = b.el.getBoundingClientRect();
+  const measuredWidth = b.el.clientWidth || boardRect.width || MIN_W;
+  const viewportWidth = document.documentElement?.clientWidth || window.innerWidth || measuredWidth;
+  const availableWidth = Math.max(1, viewportWidth - boardRect.left);
+  return Math.min(measuredWidth, availableWidth);
+}
+
+// Below the 1100px breakpoint the CSS grid drops to 2/1 columns; a free-drag
+// layout captured on a wide screen is meaningless there. Fall back to native
+// grid flow instead of squeezing (and previously: corrupting) saved positions.
+const freeLayoutViewportOk = () =>
+  (window.innerWidth || document.documentElement?.clientWidth || 0) > 1100;
+
 // A saved layout can be partial when a provider was disabled while positions
 // were captured. When that provider is enabled later, assign every newly
 // visible card a collision-free slot before absolute positioning is applied.
@@ -51,46 +67,20 @@ function placeUnmappedVisible(b) {
     .filter(Boolean);
   const visible = elements
     .filter(isVisible);
-  const boardRect = b.el.getBoundingClientRect();
-  const measuredWidth = b.el.clientWidth || boardRect.width || MIN_W;
-  const viewportWidth = document.documentElement?.clientWidth || window.innerWidth || measuredWidth;
-  const availableWidth = Math.max(1, viewportWidth - boardRect.left);
-  const boardWidth = Math.min(measuredWidth, availableWidth);
+  const boardWidth = boardWidthOf(b);
   // A board mid-reflow (provider visibility just toggled, breakpoint just
   // crossed, first paint before layout settles) can transiently measure
   // narrower than any real layout. Trusting that would "clamp" perfectly
   // valid saved positions and auto-persist the corruption. Bail until the
   // board reports a plausible width.
   if (boardWidth < MIN_W) return false;
-  const columnWidth = Math.max(MIN_W, Math.floor((boardWidth - 32) / 3));
-  const positionWidth = el => Number(map[el.id]?.w) || el.offsetWidth || columnWidth;
-  const fitsBoard = el => {
-    const pos = map[el.id];
-    if (!pos) return false;
-    const width = positionWidth(el);
-    return Number(pos.x) >= 0 && Number(pos.x) + width <= boardWidth;
-  };
-
-  // Keep saved cards on their saved row. If a viewport change makes one wider
-  // than the available board or pushes it past the right edge, clamp only its
-  // width/x. Sending it through findOpenPosition() would move it to the bottom
-  // after every refresh, even when its original top-row position is usable.
   let changed = false;
-  for (const el of visible) {
-    const pos = map[el.id];
-    if (!pos || fitsBoard(el)) continue;
-    const savedWidth = Number(pos.w);
-    const width = Number.isFinite(savedWidth) && savedWidth > 0
-      ? Math.min(boardWidth, savedWidth)
-      : Math.min(boardWidth, el.offsetWidth || columnWidth);
-    const x = Math.max(0, Math.min(Number(pos.x) || 0, Math.max(0, boardWidth - width)));
-    if (x !== Number(pos.x) || width !== savedWidth) {
-      map[el.id] = { ...pos, x: Math.round(x), w: Math.round(width) };
-      changed = true;
-    }
-  }
+  const columnWidth = Math.max(MIN_W, Math.floor((boardWidth - 32) / 3));
 
-  // Only widgets without a saved position are placed into a new slot.
+  // Only widgets without a saved position are placed into a new slot — and a
+  // new slot is the ONLY thing this function is allowed to write. Saved
+  // positions are never rewritten from a passive render tick; a too-narrow
+  // board is handled at paint time by applyBoard() instead.
   const missing = visible.filter(el => !map[el.id]);
   if (!missing.length) return changed;
 
@@ -152,8 +142,9 @@ function placeUnmappedVisible(b) {
       ...(Number.isFinite(savedHeight) ? { h: savedHeight } : {}),
     };
     occupied.push({ x, y, w: width, h: height });
+    changed = true;
   }
-  return true;
+  return changed;
 }
 
 // Source of truth on load comes from the server config.
@@ -168,6 +159,7 @@ export function setAnalysisLayout(layout) {
 // board to fit the lowest child.
 function applyBoard(b) {
   const map = mapFor(b.which);
+  const boardWidth = boardWidthOf(b);
   b.el.classList.add('arranged');
   let maxBottom = 0;
   for (const id of b.ids()) {
@@ -175,9 +167,25 @@ function applyBoard(b) {
     if (!isVisible(el)) continue;
     const pos = map[id];
     if (pos) {
-      el.style.left = pos.x + 'px';
-      el.style.top = pos.y + 'px';
-      if (pos.w) el.style.width = pos.w + 'px';
+      let width = Number(pos.w) > 0 ? Number(pos.w) : 0;
+      let x = Number(pos.x) || 0;
+      // Keep saved cards on their saved row. When the board is narrower than
+      // the saved position needs, clamp what is PAINTED only — the layout map
+      // is deliberately left untouched, so widening the window restores the
+      // user's original placement. Writing this clamp back (from a scrollbar
+      // appearing, a breakpoint crossing, or any 10s render tick) is what made
+      // layouts "randomly reset".
+      if (boardWidth >= MIN_W) {
+        const effective = width || el.offsetWidth || boardWidth;
+        const fits = Number(pos.x) >= 0 && Number(pos.x) + effective <= boardWidth;
+        if (!fits) {
+          width = Math.min(boardWidth, effective);
+          x = Math.max(0, Math.min(Number(pos.x) || 0, Math.max(0, boardWidth - width)));
+        }
+      }
+      el.style.left = Math.round(x) + 'px';
+      el.style.top = (Number(pos.y) || 0) + 'px';
+      if (width) el.style.width = Math.round(width) + 'px';
       if (pos.h) el.style.height = pos.h + 'px';
     }
     maxBottom = Math.max(maxBottom, el.offsetTop + el.offsetHeight);
@@ -185,11 +193,31 @@ function applyBoard(b) {
   b.el.style.minHeight = maxBottom + 'px';
 }
 
+// Drop a board back to native grid flow without touching its saved layout map.
+function unapplyBoard(b) {
+  b.el.classList.remove('arranged');
+  b.el.style.minHeight = '';
+  for (const id of b.ids()) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.style.left = '';
+    el.style.top = '';
+    el.style.width = '';
+    el.style.height = '';
+  }
+}
+
 // Apply saved/active layouts to every visible board.
 export function applyLayout() {
   let changed = false;
+  const wide = freeLayoutViewportOk();
   for (const b of boards()) {
     if (!boardVisible(b.el)) {
+      continue;
+    }
+
+    if (!arranging && !wide) {
+      unapplyBoard(b);
       continue;
     }
 
@@ -211,8 +239,14 @@ export function applyLayout() {
 // live. While arranging, seed a newly-shown board so switching views keeps working.
 export function reapplyCardLayout() {
   let changed = false;
+  const wide = freeLayoutViewportOk();
   for (const b of boards()) {
     if (!boardVisible(b.el)) continue;
+    if (!arranging && !wide) {
+      // Narrow viewport: native grid flow, saved positions kept on disk.
+      unapplyBoard(b);
+      continue;
+    }
     if (arranging) {
       if (!boardHasSaved(b)) {
         seedBoard(b);
@@ -436,6 +470,15 @@ export function initLayout() {
   // Switching to a view while arranging must seed/show its board; the analysis
   // module emits 'viewchange', and render() calls reapplyCardLayout() too.
   window.addEventListener('viewchange', () => reapplyCardLayout());
+
+  // Repaint (never rewrite) saved positions when the window size changes: the
+  // clamp in applyBoard() is render-only, so both shrinking and re-widening
+  // must trigger a fresh paint.
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => reapplyCardLayout(), 150);
+  });
 }
 
 // True while arrange mode is on — analysis.js uses it to suppress table sorting

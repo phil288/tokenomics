@@ -47,16 +47,56 @@ test('placement falls back below occupied content on a narrow board', async () =
   );
 });
 
-test('layout keeps saved cards on their row when the viewport changes', () => {
+test('layout clamps saved cards for paint only, never rewriting the saved map', () => {
   const layout = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'layout.js'), 'utf8');
   assert.match(layout, /const viewportWidth = document\.documentElement\?\.clientWidth \|\| window\.innerWidth/);
   assert.match(layout, /Keep saved cards on their saved row/);
-  assert.match(layout, /Number\(pos\.x\) \+ width <= boardWidth/);
-  assert.match(layout, /Number\(pos\.x\) \+ width > boardWidth/);
-  assert.match(layout, /const missing = visible\.filter\(el => !map\[el\.id\]\)/,
-    'only new widgets should receive collision-based placement');
-  assert.match(layout, /const x = Math\.max\(0, Math\.min\(Number\(pos\.x\)/,
+
+  // The clamp lives in applyBoard() (paint) and must not assign into `map`.
+  const applyBoard = layout.slice(
+    layout.indexOf('function applyBoard(b) {'),
+    layout.indexOf('\n}', layout.indexOf('function applyBoard(b) {')),
+  );
+  assert.match(applyBoard, /Number\(pos\.x\) \+ effective <= boardWidth/);
+  assert.match(applyBoard, /x = Math\.max\(0, Math\.min\(Number\(pos\.x\)/,
     'saved cards should be clamped horizontally instead of moved vertically');
+  assert.doesNotMatch(applyBoard, /map\[id\]\s*=/,
+    'painting must never write back into the saved layout map');
+
+  // placeUnmappedVisible() may only ever add positions for brand-new widgets.
+  const place = layout.slice(
+    layout.indexOf('function placeUnmappedVisible(b) {'),
+    layout.indexOf('\n}', layout.indexOf('function placeUnmappedVisible(b) {')),
+  );
+  assert.match(place, /const missing = visible\.filter\(el => !map\[el\.id\]\)/,
+    'only new widgets should receive collision-based placement');
+  assert.equal((place.match(/map\[el\.id\] = \{/g) || []).length, 1,
+    'the only map write is the new-widget placement');
+  assert.ok(place.indexOf('const missing') < place.indexOf('map[el.id] = {'),
+    'no saved position may be rewritten before the unmapped-widget placement');
+});
+
+test('a narrow viewport falls back to native grid instead of squeezing saved positions', () => {
+  const layout = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'layout.js'), 'utf8');
+  assert.match(layout, /const freeLayoutViewportOk = \(\) =>/);
+  assert.match(layout, /function unapplyBoard\(b\) \{/);
+  // Both entry points must honour the gate.
+  for (const fn of ['export function applyLayout()', 'export function reapplyCardLayout()']) {
+    const body = layout.slice(layout.indexOf(fn), layout.indexOf('\n}', layout.indexOf(fn)));
+    assert.match(body, /const wide = freeLayoutViewportOk\(\);/, fn + ' must read the viewport gate');
+    assert.match(body, /if \(!arranging && !wide\) \{[\s\S]*unapplyBoard\(b\);/, fn + ' must fall back');
+  }
+  const unapply = layout.slice(
+    layout.indexOf('function unapplyBoard(b) {'),
+    layout.indexOf('\n}', layout.indexOf('function unapplyBoard(b) {')),
+  );
+  assert.doesNotMatch(unapply, /map|delete/,
+    'falling back to grid must not touch saved positions');
+});
+
+test('window resize repaints the layout', () => {
+  const layout = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'layout.js'), 'utf8');
+  assert.match(layout, /window\.addEventListener\('resize'[\s\S]*reapplyCardLayout\(\)/);
 });
 
 test('overview grid tracks can shrink without forcing horizontal overflow', () => {
