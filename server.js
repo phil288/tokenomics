@@ -2,9 +2,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { getSettings, updateSettings } = require('./src/settings');
-const { collectStats, collectStatsRaw, pollAntigravity, pollClaude, collectActivity, collectRtkTotals, resolveCursorToken, testCursorToken } = require('./src/collectors');
+const { collectStats, collectStatsRaw, pollAntigravity, pollClaude, collectActivity, collectRtkTotals, collectRtkSince, resolveCursorToken, testCursorToken } = require('./src/collectors');
 const { history, recordSnapshot, clearHistory } = require('./src/history');
-const { captureBaseline, clearBaseline, applyActivityBaseline } = require('./src/baseline');
+const { captureBaseline, clearBaseline, applyActivityBaseline, getBaseline } = require('./src/baseline');
 const analysis = require('./src/analysis');
 const { pollVersion } = require('./src/version');
 const { pollToolVersions } = require('./src/tool-versions');
@@ -168,7 +168,11 @@ const server = http.createServer(async (req, res) => {
     const limit = Number(new URL(req.url, 'http://localhost').searchParams.get('limit')) || 50;
     const rows = await collectActivity({ limit });
     // rtk: full-history gain/loss totals (whole DB, not just the loaded window).
-    const rtk = collectRtkTotals();
+    // With a reset baseline, sum post-reset rows instead: RTK prunes old rows,
+    // so whole-DB minus value-at-reset drifts to 0 (collectRtkSince()).
+    const b = getBaseline();
+    const since = b && collectRtkSince(b.t);
+    const rtk = since ? { ...since.totals, since: b.t } : collectRtkTotals();
     // Honour an active reset baseline: only show events after the reset, and
     // offset the lifetime gain/loss totals by their value at reset.
     const payload = applyActivityBaseline({ rows, rtk });

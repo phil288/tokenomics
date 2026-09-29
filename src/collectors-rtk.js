@@ -3,15 +3,27 @@ const path = require('path');
 const { settings } = require('./settings');
 const { HOME, configuredHomes, execPromise } = require('./collector-utils');
 
+// snapd copies $SNAP_USER_DATA into the new revision's dir on every refresh and
+// keeps old revisions around for rollback, so ~/snap/code/<rev> dirs are frozen
+// duplicates of the live one. Summing them multi-counts RTK history, and the
+// aggregate then drops whenever snapd garbage-collects a revision. Only the
+// active revision (`current`, else the highest numbered one) is live.
+function activeSnapRevision(snapCode) {
+  try {
+    return path.basename(fs.realpathSync(path.join(snapCode, 'current')));
+  } catch { }
+  try {
+    const revs = fs.readdirSync(snapCode).filter(r => /^\d+$/.test(r));
+    return revs.length ? String(Math.max(...revs.map(Number))) : null;
+  } catch { return null; }
+}
+
 function listSnapShareDirs() {
   const dirs = [];
   for (const home of configuredHomes()) {
     const snapCode = path.join(home, 'snap', 'code');
-    try {
-      for (const rev of fs.readdirSync(snapCode)) {
-        dirs.push(path.join(snapCode, rev, '.local', 'share'));
-      }
-    } catch { }
+    const rev = activeSnapRevision(snapCode);
+    if (rev) dirs.push(path.join(snapCode, rev, '.local', 'share'));
   }
   return dirs;
 }
@@ -337,6 +349,52 @@ function collectRtkTotals() {
   return t;
 }
 
+// RTK totals from rows at/after `cutMs`, read straight from SQLite. Used while a
+// reset baseline is active: RTK prunes rows older than `[tracking] history_days`
+// (default 90), so its cumulative totals shrink over time and "now minus
+// value-at-reset" collapses to 0. Summing the post-reset rows is immune to that.
+// SQL prefilters on the date prefix (lexicographic compare is safe at day
+// granularity); the exact cut is done with Date.parse because rows mix `Z` and
+// `+00:00` suffixes. Returns null when no DB could be read, so callers can fall
+// back to the subtraction.
+function collectRtkSince(cutMs) {
+  let DatabaseSync;
+  try { ({ DatabaseSync } = require('node:sqlite')); } catch { return null; }
+  const dayBefore = new Date(cutMs - 86400000).toISOString().slice(0, 10);
+  const summary = { total_commands: 0, total_input: 0, total_output: 0, total_saved: 0, total_time_ms: 0 };
+  const totals = { gain: 0, loss: 0, net: 0, gainCmds: 0, lossCmds: 0 };
+  let read = 0;
+  for (const home of rtkDataHomes()) {
+    const dbPath = path.join(home, 'rtk', 'history.db');
+    try {
+      if (!fs.existsSync(dbPath)) continue;
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      const rows = db.prepare(
+        'SELECT timestamp, input_tokens, output_tokens, saved_tokens, exec_time_ms FROM commands WHERE timestamp >= ?'
+      ).all(dayBefore);
+      db.close();
+      read++;
+      for (const r of rows) {
+        if (!(Date.parse(r.timestamp) >= cutMs)) continue;
+        const input = Number(r.input_tokens) || 0;
+        const output = Number(r.output_tokens) || 0;
+        summary.total_commands++;
+        summary.total_input += input;
+        summary.total_output += output;
+        summary.total_saved += Number(r.saved_tokens) || 0;
+        summary.total_time_ms += Number(r.exec_time_ms) || 0;
+        if (output < input) { totals.gain += input - output; totals.gainCmds++; }
+        else if (output > input) { totals.loss += output - input; totals.lossCmds++; }
+      }
+    } catch { }
+  }
+  if (!read) return null;
+  summary.avg_savings_pct = summary.total_input ? (summary.total_saved / summary.total_input) * 100 : 0;
+  summary.avg_time_ms = summary.total_commands ? Math.round(summary.total_time_ms / summary.total_commands) : 0;
+  totals.net = totals.gain - totals.loss;
+  return { summary, totals };
+}
+
 module.exports = {
   collectRTK,
   collectRTKForHome,
@@ -344,6 +402,7 @@ module.exports = {
   parseRtkVal,
   rtkDataHomes,
   collectRtkTotals,
+  collectRtkSince,
   maxRtkLastUsed,
   readRtkActivity,
 };

@@ -336,3 +336,41 @@ test('captureBaseline persists to disk and loadBaseline restores it', () => {
   assert.equal(getBaseline(), null);
   assert.ok(!fs.existsSync(BASELINE_FILE));
 });
+
+test('applyBaseline uses post-reset RTK rows instead of subtracting a pruned counter', () => {
+  captureBaseline(rawStats());
+  // RTK pruned pre-reset history: the absolute total is now BELOW the baseline,
+  // so subtraction would clamp to 0 even though work happened since the reset.
+  const s = rawStats();
+  s.rtk.summary = { total_saved: 500_000, total_commands: 60, total_input: 600_000, total_output: 3_000 };
+  const rtkSince = { summary: {
+    total_commands: 7, total_input: 1_000, total_output: 200, total_saved: 800,
+    total_time_ms: 70, avg_savings_pct: 80, avg_time_ms: 10,
+  } };
+  const out = applyBaseline(s, { rtkSince });
+  assert.equal(out.rtk.summary.total_saved, 800);
+  assert.equal(out.rtk.summary.total_commands, 7);
+  assert.equal(out.rtk.summary.avg_savings_pct, 80);
+  assert.equal(out.rtk.summary_since, 'rows');
+  clearBaseline();
+});
+
+test('applyBaseline falls back to subtraction when RTK rows are unreadable', () => {
+  captureBaseline(rawStats());
+  const s = rawStats();
+  s.rtk.summary.total_saved = 900_000;
+  const out = applyBaseline(s, { rtkSince: null });
+  assert.equal(out.rtk.summary.total_saved, 100_000);
+  assert.equal(out.rtk.summary_since, undefined);
+  clearBaseline();
+});
+
+test('applyActivityBaseline does not re-offset totals already computed since the reset', () => {
+  captureBaseline(rawStats(), { gain: 100, loss: 30, gainCmds: 10, lossCmds: 4 });
+  const since = getBaseline().t;
+  const out = applyActivityBaseline({ rows: [], rtk: { gain: 50, loss: 5, net: 45, gainCmds: 3, lossCmds: 1, since } });
+  assert.equal(out.rtk.gain, 50);
+  assert.equal(out.rtk.gainCmds, 3);
+  assert.equal(out.rtk.net, 45);
+  clearBaseline();
+});

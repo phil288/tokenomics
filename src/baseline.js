@@ -175,19 +175,31 @@ const sub = (a, b) => Math.max(0, (a || 0) - (b || 0));
 // (SSE stream, recorded history snapshots, the activity feed) sees a single,
 // consistent offset view. Guards on each baseline sub-object so a baseline
 // captured by an older build (missing .day / .window) still applies safely.
-function applyBaseline(stats) {
+//
+// `opts.rtkSince` ({ summary }, from collectRtkSince(baseline.t)) replaces the
+// RTK summary subtraction when given: RTK prunes rows older than its
+// `history_days`, so its cumulative totals are not monotonic and
+// "now − value-at-reset" clamps to 0 once enough pre-reset history is pruned.
+// Null/absent (SQLite unreadable) falls back to the subtraction.
+function applyBaseline(stats, opts = {}) {
   if (!baseline || !stats) return stats;
   const b = baseline;
+  const rtkSince = opts && opts.rtkSince;
 
   // ---- RTK ----
   if (stats.rtk && stats.rtk.summary && !stats.rtk.error) {
     const s = stats.rtk.summary;
-    s.total_saved = sub(s.total_saved, b.rtk.total_saved);
-    s.total_commands = sub(s.total_commands, b.rtk.total_commands);
-    s.total_input = sub(s.total_input, b.rtk.total_input);
-    s.total_output = sub(s.total_output, b.rtk.total_output);
-    // Recompute the ratio from the now-offset totals so it stays coherent.
-    s.avg_savings_pct = s.total_input ? (s.total_saved / s.total_input) * 100 : 0;
+    if (rtkSince && rtkSince.summary) {
+      Object.assign(s, rtkSince.summary);
+      stats.rtk.summary_since = 'rows';
+    } else {
+      s.total_saved = sub(s.total_saved, b.rtk.total_saved);
+      s.total_commands = sub(s.total_commands, b.rtk.total_commands);
+      s.total_input = sub(s.total_input, b.rtk.total_input);
+      s.total_output = sub(s.total_output, b.rtk.total_output);
+      // Recompute the ratio from the now-offset totals so it stays coherent.
+      s.avg_savings_pct = s.total_input ? (s.total_saved / s.total_input) * 100 : 0;
+    }
 
     // Daily breakdown (the RTK bar chart): drop buckets before the reset day,
     // and subtract the reset-day bucket's value-at-reset from the reset-day bar.
@@ -315,8 +327,10 @@ function applyActivityBaseline(payload) {
   if (Array.isArray(payload.rows)) {
     payload.rows = payload.rows.filter(r => typeof r.ts === 'number' && r.ts >= cut);
   }
+  // Totals already computed from post-reset rows (collectRtkTotals(since))
+  // must not be offset again.
   const rb = baseline.rtkTotals;
-  if (payload.rtk && rb) {
+  if (payload.rtk && rb && !payload.rtk.since) {
     const r = payload.rtk;
     r.gain = sub(r.gain, rb.gain);
     r.loss = sub(r.loss, rb.loss);

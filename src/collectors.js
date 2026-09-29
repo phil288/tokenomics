@@ -2,7 +2,7 @@ const path = require('path');
 const { settings } = require('./settings');
 const { collectVersion } = require('./version');
 const { collectToolVersions } = require('./tool-versions');
-const { applyBaseline } = require('./baseline');
+const { applyBaseline, getBaseline } = require('./baseline');
 const {
   REFRESH_MS,
   configuredHomes,
@@ -18,6 +18,7 @@ const {
   parseRtkVal,
   rtkDataHomes,
   collectRtkTotals,
+  collectRtkSince,
   maxRtkLastUsed,
 } = require('./collectors-rtk');
 const {
@@ -229,7 +230,11 @@ async function collectStatsRaw() {
 }
 
 async function collectStats() {
-  return applyBaseline(await collectStatsRaw());
+  const raw = await collectStatsRaw();
+  // RTK's ledger is pruned (history_days), so its "since reset" totals come from
+  // post-reset rows rather than a counter subtraction — see collectRtkSince().
+  const b = getBaseline();
+  return applyBaseline(raw, b ? { rtkSince: collectRtkSince(b.t) } : undefined);
 }
 
 module.exports = {
@@ -253,6 +258,7 @@ module.exports = {
   applyUserRtkFallback,
   collectActivity,
   collectRtkTotals,
+  collectRtkSince,
   parseProxyPerfLine,
   parseSessionStatLine,
   rtkDataHomes,
