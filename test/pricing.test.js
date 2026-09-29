@@ -14,8 +14,8 @@ process.env.TOKENOMICS_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-px-
 
 const PRICING_JS = fs.readFileSync(path.join(ROOT, 'src/web/pricing.js'), 'utf8');
 // eslint-disable-next-line no-new-func
-const pricing = new Function(`${PRICING_JS.replace(/^export /gm, '')}\nreturn { derivePricingRates, PRICING };`)();
-const { derivePricingRates, PRICING } = pricing;
+const pricing = new Function(`${PRICING_JS.replace(/^export /gm, '')}\nreturn { derivePricingRates, PRICING, priceFor };`)();
+const { derivePricingRates, PRICING, priceFor } = pricing;
 const { DEFAULT_PRICING } = require('../src/settings');
 
 test('Claude and Cursor output is 5× input; cache is 0.1 / 1.25 / 2×', () => {
@@ -62,7 +62,30 @@ test('float rounding does not leak binary residues', () => {
 // Flash intro pricing is out:5× input, not Gemini's usual 6×). These are
 // legitimate hand-entered overrides, not drift — see AGENTS.md §3 "Keep
 // Cost & Model Lists in Sync".
+//
+// Also exempt (published rates, platform.claude.com pricing / cursor.com
+// models-and-pricing / ai.google.dev pricing, checked 2026-09-29):
+// - Claude Fable 5.1 / Mythos 5.1 cache reads are 0.025× input ($0.25), and
+//   Opus 5.5 cache reads are 0.05× input ($0.20) — not the 0.1× default.
+// - GPT-5.5 / 5.6 Terra / 5.6 Luna output is 6× input (5.5: $5/$30), not the
+//   5× Cursor-family default. Gemini 3.5 Flash-Lite output is 8.33× ($0.30/$2.50);
+//   Gemini 3.6 Flash is on the same intro rate as 3.7/3.8.
 const FORMULA_EXEMPT_PREFIXES = new Set([
+  'claude-fable-5-1',
+  'claude-mythos-5-1',
+  'claude-opus-5-5',
+  'cursor-fable-5.1',
+  'cursor-opus-5.5',
+  'cursor-gpt-5.6-terra',
+  'cursor-gpt-5.6-luna',
+  'cursor-gpt-5.5',
+  'cursor-grok-4.7-500k-fast',
+  'cursor-grok-4.7-500k',
+  'cursor-grok-4.7-fast',
+  'cursor-grok-4.7',
+  'antigravity-3.6-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
   'cursor-grok-4.6-fast',
   'cursor-grok-4.6',
   'cursor-grok-4.5-fast',
@@ -97,5 +120,41 @@ test('server DEFAULT_PRICING matches derivePricingRates and the client table', (
   assert.equal(DEFAULT_PRICING.length, PRICING.length);
   for (let i = 0; i < PRICING.length; i++) {
     assert.equal(DEFAULT_PRICING[i][0], PRICING[i][0], `prefix mismatch at row ${i}`);
+  }
+});
+
+test('server and client tables carry identical costs, not just prefixes', () => {
+  assert.deepEqual(DEFAULT_PRICING, PRICING);
+});
+
+test('no row is shadowed by an earlier, shorter prefix', () => {
+  // priceFor() returns the first startsWith hit, so a longer prefix listed
+  // after its shorter base (claude-opus-5 before claude-opus-5-5) is dead.
+  PRICING.forEach(([prefix], i) => {
+    for (const [earlier] of PRICING.slice(0, i)) {
+      assert.ok(!prefix.startsWith(earlier), `${prefix} is shadowed by ${earlier}`);
+    }
+  });
+});
+
+test('real model ids resolve to their published rates', () => {
+  const cases = [
+    ['claude-opus-5-5', { in: 4, out: 20, cr: 0.2 }],
+    ['claude-opus-5', { in: 5, out: 25, cr: 0.5 }],
+    ['claude-opus-4-8', { in: 5, out: 25, cr: 0.5 }],
+    ['claude-sonnet-5-5', { in: 2, out: 10, cr: 0.2 }],
+    ['claude-sonnet-4-6', { in: 3, out: 15, cr: 0.3 }],
+    ['claude-fable-5-1', { in: 10, out: 50, cr: 0.25 }],
+    ['claude-fable-5', { in: 10, out: 50, cr: 1 }],
+    ['claude-haiku-4-5', { in: 1, out: 5, cr: 0.1 }],
+    ['gemini-3.5-flash-lite', { in: 0.3, out: 2.5, cr: 0.03 }],
+    ['gemini-3.5-flash', { in: 1.5, out: 9, cr: 0.15 }],
+    ['cursor-grok-4.7-500k-fast', { in: 6, out: 18, cr: 1.5 }],
+    ['cursor-grok-4.7', { in: 2, out: 6, cr: 0.5 }],
+  ];
+  for (const [name, want] of cases) {
+    const p = priceFor(name);
+    assert.ok(p, `${name} has a price`);
+    assert.deepEqual({ in: p.in, out: p.out, cr: p.cr }, want, name);
   }
 });
