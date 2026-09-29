@@ -14,8 +14,8 @@ process.env.TOKENOMICS_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tok-px-
 
 const PRICING_JS = fs.readFileSync(path.join(ROOT, 'src/web/pricing.js'), 'utf8');
 // eslint-disable-next-line no-new-func
-const pricing = new Function(`${PRICING_JS.replace(/^export /gm, '')}\nreturn { derivePricingRates, PRICING, priceFor };`)();
-const { derivePricingRates, PRICING, priceFor } = pricing;
+const pricing = new Function(`${PRICING_JS.replace(/^export /gm, '')}\nreturn { derivePricingRates, PRICING, priceFor, pricingProvider, groupPricingRows, matchPricingRow, analyzePricingRows };`)();
+const { derivePricingRates, PRICING, priceFor, pricingProvider, groupPricingRows, matchPricingRow, analyzePricingRows } = pricing;
 const { DEFAULT_PRICING } = require('../src/settings');
 
 test('Claude and Cursor output is 5× input; cache is 0.1 / 1.25 / 2×', () => {
@@ -156,5 +156,66 @@ test('real model ids resolve to their published rates', () => {
     const p = priceFor(name);
     assert.ok(p, `${name} has a price`);
     assert.deepEqual({ in: p.in, out: p.out, cr: p.cr }, want, name);
+  }
+});
+
+// ---- Pricing-tab editor helpers ----
+
+test('pricingProvider buckets prefixes by vendor', () => {
+  assert.equal(pricingProvider('claude-opus-5-5'), 'anthropic');
+  assert.equal(pricingProvider('gemini-3.8-flash'), 'google');
+  assert.equal(pricingProvider('antigravity-3.1-pro'), 'google');
+  assert.equal(pricingProvider('cursor-grok-4.7'), 'cursor');
+  assert.equal(pricingProvider('my-local-model'), 'other');
+  assert.equal(pricingProvider(''), 'other');
+});
+
+test('grouping the editor never changes which row bills a model', () => {
+  // The editor renders (and saves) rows grouped by provider. That is only
+  // safe if the grouped order resolves every model id to the same row.
+  const mixed = [
+    ['cursor-opus', { in: 5 }], ['my-model', { in: 1 }], ['claude-opus-5-5', { in: 4 }],
+    ['gemini-3.5-flash-lite', { in: 0.3 }], ['claude-opus-5', { in: 5 }], ['gemini-3.5-flash', { in: 1.5 }],
+  ];
+  const regrouped = groupPricingRows(mixed).flatMap((g) => g.rows);
+  assert.deepEqual(groupPricingRows(mixed).map((g) => g.key), ['anthropic', 'google', 'cursor', 'other']);
+  for (const table of [mixed, PRICING]) {
+    const grouped = groupPricingRows(table).flatMap((g) => g.rows);
+    assert.equal(grouped.length, table.length);
+    for (const [prefix] of table) {
+      for (const id of [prefix, `${prefix}-20260101`]) {
+        const a = matchPricingRow(table, id);
+        const b = matchPricingRow(grouped, id);
+        assert.equal(grouped[b][0], table[a][0], `${id} must bill by the same row after grouping`);
+      }
+    }
+  }
+  assert.equal(regrouped[0][0], 'claude-opus-5-5', 'relative order inside a group is preserved');
+});
+
+test('matchPricingRow uses the first-prefix rule and -1 for no match', () => {
+  assert.equal(PRICING[matchPricingRow(PRICING, 'claude-opus-5-5')][0], 'claude-opus-5-5');
+  assert.equal(PRICING[matchPricingRow(PRICING, 'cursor-grok-4.7-fast-x')][0], 'cursor-grok-4.7-fast');
+  assert.equal(matchPricingRow(PRICING, 'gpt-4o'), -1);
+  assert.equal(matchPricingRow(PRICING, '   '), -1);
+});
+
+test('analyzePricingRows flags duplicates, shadowed rows and custom cells', () => {
+  const rows = [
+    ['claude-opus-5', { in: 5, out: 25, cr: 0.5, cw5: 6.25, cw1: 10 }],
+    ['claude-opus-5-5', { in: 4, out: 20, cr: 0.2, cw5: 5, cw1: 8 }],
+    ['claude-opus-5', { in: 5, out: 25, cr: 0.5, cw5: 6.25, cw1: 10 }],
+    ['', { in: 0, out: 0, cr: 0, cw5: 0, cw1: 0 }],
+  ];
+  const [a, b, c, d] = analyzePricingRows(rows);
+  assert.deepEqual(a, { empty: false, duplicateOf: -1, shadowedBy: -1, custom: {} });
+  assert.equal(b.shadowedBy, 0, 'opus-5-5 listed after opus-5 is dead');
+  assert.deepEqual(b.custom, { cr: 0.4 }, 'opus-5-5 cache read differs from the 0.1× formula');
+  assert.equal(c.duplicateOf, 0);
+  assert.equal(d.empty, true);
+  // The shipped table has no dead rows.
+  for (const [i, r] of analyzePricingRows(PRICING).entries()) {
+    assert.equal(r.duplicateOf, -1, `${PRICING[i][0]} duplicate`);
+    assert.equal(r.shadowedBy, -1, `${PRICING[i][0]} shadowed`);
   }
 });

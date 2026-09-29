@@ -114,3 +114,66 @@ export function modelUsdRaw(name, m) {
   const cacheAll = (m.cache_reads || 0) + (m.cache_writes_total || 0);
   return ((m.input || 0) * p.in + (m.output || 0) * p.out + cacheAll * p.in) / 1e6;
 }
+
+// ---- pricing-table editor analysis (pure; used by the settings Pricing tab) ----
+
+// Provider section a prefix is listed under. Leading tokens never prefix one
+// another across providers, so grouping the editor by provider cannot change
+// which row priceFor() picks — relative order inside a group is preserved.
+export const PRICING_PROVIDERS = [
+  { key: 'anthropic', label: 'Anthropic' },
+  { key: 'google', label: 'Google' },
+  { key: 'cursor', label: 'Cursor' },
+  { key: 'other', label: 'Custom' },
+];
+export function pricingProvider(prefix) {
+  const p = String(prefix || '').trim().toLowerCase();
+  if (p.startsWith('claude')) return 'anthropic';
+  if (p.startsWith('gemini') || p.startsWith('antigravity')) return 'google';
+  if (p.startsWith('cursor')) return 'cursor';
+  return 'other';
+}
+
+// Stable partition of [prefix, cost] rows into provider order.
+export function groupPricingRows(rows) {
+  const order = PRICING_PROVIDERS.map((g) => g.key);
+  return order
+    .map((key) => ({ key, rows: rows.filter(([prefix]) => pricingProvider(prefix) === key) }))
+    .filter((g) => g.rows.length > 0);
+}
+
+// First row whose prefix the model name starts with — the same rule as
+// priceFor(), but over an arbitrary (unsaved) table. -1 when nothing matches.
+export function matchPricingRow(rows, name) {
+  const n = String(name || '').trim();
+  if (!n) return -1;
+  return rows.findIndex(([prefix]) => prefix && n.startsWith(prefix));
+}
+
+// Per-row diagnostics for the editor:
+//   duplicateOf — index of an earlier row with the same prefix (this row is dead)
+//   shadowedBy  — index of an earlier, shorter prefix this one starts with (dead)
+//   custom      — { field: formulaValue } for cells that differ from derivePricingRates
+export function analyzePricingRows(rows) {
+  const FIELDS = ['out', 'cr', 'cw5', 'cw1'];
+  return rows.map(([prefix, cost], i) => {
+    const p = String(prefix || '').trim();
+    let duplicateOf = -1;
+    let shadowedBy = -1;
+    if (p) {
+      for (let j = 0; j < i; j++) {
+        const q = String(rows[j][0] || '').trim();
+        if (!q) continue;
+        if (q === p) { duplicateOf = j; break; }
+        if (shadowedBy < 0 && p.startsWith(q)) shadowedBy = j;
+      }
+    }
+    const derived = derivePricingRates(p, cost && cost.in);
+    const custom = {};
+    for (const f of FIELDS) {
+      const v = Number(cost && cost[f]);
+      if (!Number.isFinite(v) || Math.abs(v - derived[f]) > 1e-9) custom[f] = derived[f];
+    }
+    return { empty: !p, duplicateOf, shadowedBy, custom };
+  });
+}

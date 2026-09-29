@@ -1225,47 +1225,277 @@ header h1 span {
   accent-color: var(--rtk);
 }
 
-.pricing-table-container {
-  margin-top: 12px;
+/* ---- Pricing tab ---- */
+/* author display rules (inline-flex flags, etc.) would otherwise beat [hidden] */
+.tab-panel[data-panel="pricing"] [hidden] {
+  display: none !important;
+}
+
+.modal.modal-wide {
+  max-width: 880px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.px-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.px-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.px-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+
+.px-help {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 100%;
+}
+
+.px-help summary {
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.px-help summary:hover {
+  color: var(--text);
+}
+
+.px-help[open] {
+  flex-basis: 100%;
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
+  padding: 8px 12px;
+  line-height: 1.5;
+}
+
+.px-help p,
+.px-help ul {
+  margin: 6px 0;
+}
+
+.px-help ul {
+  padding-left: 18px;
+}
+
+.px-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.px-search {
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 8px;
+  color: var(--muted);
+  transition: border-color 0.2s;
+}
+
+.px-search:focus-within {
+  border-color: var(--rtk);
+}
+
+.px-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  padding: 7px 0;
+  outline: none;
+}
+
+.px-toolbar .btn-add {
+  padding: 7px 12px;
+}
+
+.px-toolbar .px-add {
+  border-style: solid;
+  border-color: var(--rtk);
+  color: var(--rtk);
+}
+
+.px-toolbar .px-add:hover {
+  background: var(--rtk);
+  color: var(--on-accent);
+}
+
+.px-match {
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.px-match.ok {
+  border-color: color-mix(in srgb, var(--headroom) 45%, var(--border));
+}
+
+.px-match.warn {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+}
+
+.px-match code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.px-per {
+  color: var(--muted);
+}
+
+.pricing-table-container {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: auto;
+  max-height: min(56vh, 560px);
+  background: var(--card-2);
+  scrollbar-gutter: stable;
 }
 
 .pricing-table {
   width: 100%;
-  border-collapse: collapse;
+  min-width: 640px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
   font-size: 13px;
 }
 
-.pricing-table th {
+.pricing-table .px-col-num {
+  width: 84px;
+}
+
+.pricing-table .px-col-act {
+  width: 60px;
+}
+
+/* sticky on the whole thead (not per-th) so the two header rows can never
+   drift apart and let scrolled rows show through between them */
+.pricing-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.pricing-table thead th {
   background: var(--bg);
   text-align: left;
-  padding: 8px;
+  padding: 7px 8px;
   font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--muted);
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.pricing-table thead th.num {
+  text-align: right;
+}
+
+.pricing-table thead th.px-th-group {
+  text-align: center;
+  border-bottom-style: dashed;
 }
 
 .pricing-table td {
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--border);
 }
 
-.pricing-table tr:last-child td {
+.pricing-table tbody tr:last-child td {
   border-bottom: none;
 }
 
+.pricing-table tr.px-row:hover td {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.pricing-table tr.px-group-head th {
+  background: var(--surface-2);
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.px-group-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: 0;
+  background: var(--muted);
+}
+
+.px-group-head[data-group="anthropic"] .px-group-dot { background: var(--caveman); }
+.px-group-head[data-group="google"] .px-group-dot { background: var(--antigravity); }
+.px-group-head[data-group="cursor"] .px-group-dot { background: var(--cursor); }
+
+.px-group-count {
+  color: var(--muted);
+  font-weight: 500;
+  margin-left: 4px;
+}
+
 .pricing-table input {
-  background: var(--card-2);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--text);
   width: 100%;
-  padding: 4px;
+  padding: 5px 6px;
   font-size: 13px;
   border-radius: 4px;
   transition: border-color 0.2s, background-color 0.2s;
+}
+
+.pricing-table tr.px-row:hover input,
+.pricing-table input:hover {
+  border-color: var(--border);
 }
 
 .pricing-table input:focus {
@@ -1276,29 +1506,146 @@ header h1 span {
 
 .pricing-table input.px-num {
   text-align: right;
-  width: 70px;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+
+.pricing-table input.px-num::-webkit-outer-spin-button,
+.pricing-table input.px-num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.pricing-table input.px-prefix {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+}
+
+.px-prefix-cell {
+  position: relative;
+}
+
+.px-prefix-cell .px-prefix {
+  padding-right: 24px;
+}
+
+.px-prefix-cell .px-flag {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: help;
+}
+
+/* value that differs from the Input-derived formula */
+.pricing-table input.px-custom {
+  background: color-mix(in srgb, var(--caveman) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--caveman);
+}
+
+.px-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: -1px;
+  background: color-mix(in srgb, var(--caveman) 25%, transparent);
+  box-shadow: inset 2px 0 0 var(--caveman);
+}
+
+.px-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.px-flag.warn {
+  background: var(--warn);
+  color: var(--on-accent);
+}
+
+.pricing-table tr.px-dead input {
+  opacity: 0.55;
+}
+
+.pricing-table tr.px-match-row td {
+  background: color-mix(in srgb, var(--headroom) 12%, transparent);
+}
+
+.pricing-table tr.px-match-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--headroom);
+}
+
+.pricing-table td.px-actions {
+  text-align: right;
+  white-space: nowrap;
+  padding-left: 0;
 }
 
 .pricing-table button {
   background: transparent;
   border: none;
-  color: var(--danger);
+  color: var(--muted);
   cursor: pointer;
-  font-size: 14px;
-  padding: 4px;
+  font-size: 15px;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  padding: 0;
+  transition: color 0.15s, background-color 0.15s;
 }
 
-.pricing-table button:hover {
-  filter: brightness(1.2);
+.pricing-table .btn-reset-pricing:hover {
+  color: var(--caveman);
+  background: color-mix(in srgb, var(--caveman) 14%, transparent);
 }
 
-.table-actions {
+.pricing-table .btn-del-pricing {
+  opacity: 0.45;
+}
+
+.pricing-table tr.px-row:hover .btn-del-pricing,
+.pricing-table .btn-del-pricing:focus-visible {
+  opacity: 1;
+}
+
+.pricing-table .btn-del-pricing:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.px-empty {
+  padding: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.px-legend {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 8px;
-  background: var(--bg);
-  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.px-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#pricing-count {
+  margin-left: auto;
 }
 
 .btn-add {

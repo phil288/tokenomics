@@ -368,34 +368,62 @@
 
       <!-- Tab: Pricing -->
       <div class="tab-panel" data-panel="pricing">
-      <div>
-        <label style="font-weight: 600; font-size: 14px;">Dynamic Model Pricing (USD per million tokens)</label>
-        <div style="font-size: 11px; opacity: 0.6; margin-top: 6px; margin-bottom: 8px; line-height: 1.4;">
-          Output and cache rates follow Input. Use Refresh rates to recompute every row from its Input and prefix. Claude/Cursor output is 5×; Gemini/Antigravity is 6×. Cache read 0.1×, 5-minute write 1.25×, 1-hour write 2×. You can still override a derived cell before saving.
+        <div class="px-intro">
+          <div>
+            <div class="px-title">Model pricing</div>
+            <div class="px-sub">USD per million tokens. A model is billed by the <strong>first</strong> row whose prefix its name starts with.</div>
+          </div>
+          <details class="px-help">
+            <summary>How rates are derived</summary>
+            <p>Typing an <strong>Input</strong> price fills the other columns from the family formula:</p>
+            <ul>
+              <li>Output — 5× input for Claude &amp; Cursor, 6× for Gemini &amp; Antigravity</li>
+              <li>Cache read 0.1× · cache write 5 min 1.25× · cache write 1 h 2×</li>
+            </ul>
+            <p>Any cell can be overridden. Cells that differ from the formula are marked <span class="px-dot" aria-hidden="true"></span> <em>custom</em>; ↺ on a row resets just that row.</p>
+          </details>
         </div>
+
+        <div class="px-toolbar">
+          <div class="px-search">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M10.68 11.74a6 6 0 1 1 1.06-1.06l3.04 3.04a.75.75 0 1 1-1.06 1.06zM11.5 7a4.5 4.5 0 1 0-9 0 4.5 4.5 0 0 0 9 0"/></svg>
+            <input type="search" id="pricing-filter" placeholder="Filter, or paste a model id to see its price" aria-label="Filter pricing rows or look up a model id" autocomplete="off" spellcheck="false">
+          </div>
+          <button type="button" class="btn-add" id="btn-refresh-pricing" title="Recompute Output and cache columns of every row from its Input">↻ Refresh rates</button>
+          <button type="button" class="btn-add px-add" id="btn-add-pricing-row">+ Add model</button>
+        </div>
+        <div class="px-match" id="pricing-match" role="status" aria-live="polite" hidden></div>
+
         <div class="pricing-table-container">
           <table class="pricing-table">
+            <colgroup>
+              <col class="px-col-prefix"><col class="px-col-num"><col class="px-col-num"><col class="px-col-num"><col class="px-col-num"><col class="px-col-num"><col class="px-col-act">
+            </colgroup>
             <thead>
               <tr>
-                <th>Model Prefix</th>
-                <th style="width: 70px;">Input</th>
-                <th style="width: 70px;">Output</th>
-                <th style="width: 70px;">Cache Rd</th>
-                <th style="width: 70px;">Cw 5m</th>
-                <th style="width: 70px;">Cw 1h</th>
-                <th style="width: 40px;"></th>
+                <th rowspan="2" scope="col">Model prefix</th>
+                <th rowspan="2" scope="col" class="num">Input</th>
+                <th rowspan="2" scope="col" class="num">Output</th>
+                <th colspan="3" scope="colgroup" class="px-th-group">Prompt cache</th>
+                <th rowspan="2" scope="col"><span class="sr-only">Actions</span></th>
+              </tr>
+              <tr>
+                <th scope="col" class="num" title="Cache hits and refreshes">Read</th>
+                <th scope="col" class="num" title="5-minute cache write">Write 5m</th>
+                <th scope="col" class="num" title="1-hour cache write">Write 1h</th>
               </tr>
             </thead>
             <tbody id="pricing-table-body">
-              <!-- Dynamically populated rows -->
+              <!-- Dynamically populated: provider header rows + tr.px-row -->
             </tbody>
           </table>
-          <div class="table-actions">
-            <button type="button" class="btn-add" id="btn-refresh-pricing">↻ Refresh rates</button>
-            <button type="button" class="btn-add" id="btn-add-pricing-row">+ Add Model Pricing</button>
-          </div>
+          <div class="px-empty" id="pricing-empty" hidden>No rows match this filter.</div>
         </div>
-      </div>
+        <div class="px-legend">
+          <span><span class="px-dot" aria-hidden="true"></span> custom rate</span>
+          <span><span class="px-flag warn" aria-hidden="true">!</span> never used — duplicate or shadowed by an earlier row</span>
+          <span id="pricing-count"></span>
+        </div>
       </div><!-- /Tab: Pricing -->
 
       <!-- Tab: Data -->

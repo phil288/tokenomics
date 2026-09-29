@@ -114,7 +114,7 @@ test('pricing prefix values are attribute-escaped before templating', () => {
 test('pricing rows recompute derived rates when Input or prefix changes', () => {
   // Changing Input (or the prefix family) fills Output / Cache Rd / Cw 5m / Cw 1h.
   // Must not recompute on load — a saved row may carry a custom override.
-  assert.match(SETTINGS_JS, /import \{ PRICING, derivePricingRates \}/, 'settings.js must import derivePricingRates');
+  assert.match(SETTINGS_JS, /import \{[^}]*\bderivePricingRates\b[^}]*\} from '\.\/pricing\.js'/, 'settings.js must import derivePricingRates');
   assert.match(SETTINGS_JS, /function applyDerivedRates\(/, 'applyDerivedRates helper missing');
   assert.match(SETTINGS_JS, /\.px-in'\)\.addEventListener\('input'/, 'px-in must listen for input');
   assert.match(SETTINGS_JS, /\.px-prefix'\)\.addEventListener\('input'/, 'px-prefix must listen for input');
@@ -137,4 +137,37 @@ test('settings.js wires tab switching and opens on the first tab', () => {
   assert.match(SETTINGS_JS, /#settings-tabs \.modal-tab/, 'tab buttons not queried');
   assert.match(SETTINGS_JS, /activateTab\(/, 'activateTab not defined/used');
   assert.match(SETTINGS_JS, /activateTab\('sources'\)/, 'modal should reset to the sources tab on open');
+});
+
+test('pricing tab has the filter/lookup, legend and grouped-table contract', () => {
+  const body = panelBody('pricing');
+  for (const id of ['pricing-filter', 'pricing-match', 'pricing-empty', 'pricing-count']) {
+    assert.ok(body.includes(`id="${id}"`), `${id} should be in pricing panel`);
+  }
+  assert.match(body, /<details class="px-help">/, 'formula explanation should be collapsible');
+  assert.match(body, /colspan="3"[^>]*>Prompt cache</, 'cache columns share a "Prompt cache" group header');
+  // Save must only serialise editable rows, never the provider header rows.
+  assert.match(SETTINGS_JS, /querySelectorAll\('tr\.px-row'\)/, 'save/readPricingRows must select tr.px-row');
+  assert.doesNotMatch(SETTINGS_JS, /pricingTableBody\.querySelectorAll\('tr'\)/, 'bare tr selection would include group headers');
+  assert.match(SETTINGS_JS, /function renderPricingTable\(/, 'grouped renderer missing');
+  assert.match(SETTINGS_JS, /groupPricingRows\(rows\)/, 'renderer must group via the tested pure helper');
+  assert.match(SETTINGS_JS, /analyzePricingRows\(/, 'row diagnostics must come from the tested pure helper');
+  assert.match(SETTINGS_JS, /matchPricingRow\(rows, q\)/, 'lookup must use the priceFor-equivalent helper');
+  assert.match(SETTINGS_JS, /'pricing-filter'\)\.addEventListener\('input'/, 'filter must react to typing');
+});
+
+test('Refresh rates asks before overwriting custom (vendor) rates', () => {
+  assert.match(SETTINGS_JS, /function confirmRefreshPricingRates\(/);
+  assert.match(SETTINGS_JS, /confirmRefreshPricingRates\(\);/, 'refresh button must go through the confirm');
+  assert.match(SETTINGS_JS, /function confirmRefreshPricingRates\(\)[\s\S]*?confirm\(/, 'confirm dialog missing');
+  assert.match(SETTINGS_JS, /btn-reset-pricing/, 'per-row reset button missing');
+});
+
+test('pricing tab widens the modal and keeps [hidden] effective', () => {
+  const CSS = fs.readFileSync(path.join(ROOT, 'index.css'), 'utf8');
+  assert.match(SETTINGS_JS, /classList\.toggle\('modal-wide', name === 'pricing'\)/);
+  assert.match(CSS, /\.modal\.modal-wide\s*\{/);
+  assert.match(CSS, /\.tab-panel\[data-panel="pricing"\] \[hidden\]\s*\{\s*display: none !important;/,
+    'flags/match line use display rules that would otherwise override [hidden]');
+  assert.match(CSS, /\.pricing-table thead\s*\{\s*position: sticky;/, 'thead must be sticky as a unit');
 });
