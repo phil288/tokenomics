@@ -1,7 +1,16 @@
 {
   "name": "tokenomics",
   "version": "1.11.0",
-  "description": "Tokenomics — real-time browser dashboard for RTK, Caveman, and Headroom token-savings stats, with time-series history and per-model cost tracking.",
+  "description": "Self-hosted real-time dashboard for AI coding costs: Claude Code quota, Cursor and Antigravity usage, and token/USD savings from RTK, Headroom and Caveman. Zero dependencies.",
+  "homepage": "https://phil288.github.io/tokenomics/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phil288/tokenomics.git"
+  },
+  "bugs": {
+    "url": "https://github.com/phil288/tokenomics/issues"
+  },
+  "author": "Philippe S (https://github.com/phil288)",
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
@@ -16,15 +25,31 @@
     "node": ">=18"
   },
   "keywords": [
-    "llm",
-    "tokens",
-    "dashboard",
-    "rtk",
-    "caveman",
-    "headroom",
     "claude",
+    "claude-code",
+    "anthropic",
+    "cursor",
+    "antigravity",
+    "gemini",
+    "llm",
+    "ai",
+    "tokens",
+    "token-usage",
+    "token-counter",
+    "quota",
+    "usage-tracker",
     "cost-tracking",
-    "monitoring"
+    "llm-cost",
+    "prompt-caching",
+    "dashboard",
+    "monitoring",
+    "self-hosted",
+    "rtk",
+    "rust-token-killer",
+    "headroom",
+    "caveman",
+    "sse",
+    "zero-dependency"
   ],
   "license": "Apache-2.0",
   "dependencies": {}

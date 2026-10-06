@@ -1,0 +1,22 @@
+# Tokenomics
+
+> Tokenomics is a free, open-source (Apache-2.0), self-hosted real-time dashboard that shows how many tokens and how much money AI coding tools save you. It tracks Claude Code quota (5-hour session and weekly limits), Cursor usage, Google Antigravity quota, and token savings from RTK (Rust Token Killer), Headroom and Caveman, with per-model cost math (raw vs real vs saved USD, including prompt-cache pricing). Zero runtime dependencies: Node.js >= 18 built-ins only.
+
+Key facts:
+
+- Runs locally on http://localhost:3000; data never leaves your machine.
+- Install: `curl -fsSL https://raw.githubusercontent.com/phil288/tokenomics/main/install.sh | sh`, or `git clone https://github.com/phil288/tokenomics.git && cd tokenomics && node server.js`.
+- Live updates over Server-Sent Events, time-series history, quota pacing ("how much may I still use today"), optional desktop alerts.
+- Supported model pricing: Anthropic Claude, Google Gemini / Antigravity, Cursor models. OpenAI / Codex not yet supported.
+- Linux (systemd user service) and macOS (launchd) service installers included.
+
+## Docs
+
+- [README](https://github.com/phil288/tokenomics/blob/main/README.md): features, install, configuration, endpoints, cost math
+- [Releases](https://github.com/phil288/tokenomics/releases): changelog and versions
+- [Source](https://github.com/phil288/tokenomics): GitHub repository
+
+## Related tools
+
+- [RTK — Rust Token Killer](https://github.com/rtk-ai/rtk): CLI proxy that compresses command output for LLM agents
+- [Headroom](https://pypi.org/project/headroom-ai/): context optimization proxy (`pipx install headroom-ai`)
