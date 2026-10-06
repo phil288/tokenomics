@@ -1,6 +1,6 @@
 {
   "name": "tokenomics",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "description": "Self-hosted real-time dashboard for AI coding costs: Claude Code quota, Cursor and Antigravity usage, and token/USD savings from RTK, Headroom and Caveman. Zero dependencies.",
   "homepage": "https://phil288.github.io/tokenomics/",
   "repository": {
