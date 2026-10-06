@@ -48,9 +48,30 @@ function upsertChart(id, cfg) {
   anCharts[id] = new Chart(cv.getContext('2d'), cfg);
 }
 
+// hcBase() is built for the Trends history charts: its x axis is a LINEAR
+// timestamp scale with a time-formatting tick callback. Every Analysis chart
+// plots against CATEGORY labels (dates, weeks, model names, step numbers), so
+// reusing that x axis as-is drops every point (labels never map onto a linear
+// scale) and renders each tick as epoch 0 ("01:00 AM"). Swap the category axis
+// in, keep the shared styling, and title tooltips with the category label.
+function anBase(extra, horizontal = false) {
+  const cfg = hcBase(extra);
+  const { x, y } = cfg.options.scales;
+  const category = { type: 'category', ticks: { color: x.ticks.color, font: x.ticks.font, maxTicksLimit: 8 }, grid: x.grid };
+  if (horizontal) {
+    cfg.options.indexAxis = 'y';
+    cfg.options.scales.x = { type: 'linear', beginAtZero: true, ticks: { ...y.ticks }, grid: y.grid };
+    cfg.options.scales.y = { ...category, ticks: { ...category.ticks, autoSkip: false } };
+  } else {
+    cfg.options.scales.x = category;
+  }
+  cfg.options.plugins.tooltip.callbacks.title = items => items.length ? items[0].label : '';
+  return cfg;
+}
+
 // Vertical bars sharing the history charts' axis/grid styling.
 function drawBars(id, labels, data, color, yfmt, tipLabel) {
-  const cfg = hcBase({ yfmt, tooltip: { label: tipLabel } });
+  const cfg = anBase({ yfmt, tooltip: { label: tipLabel } });
   cfg.type = 'bar';
   cfg.options.plugins.legend.display = false;
   cfg.data = {
@@ -62,12 +83,9 @@ function drawBars(id, labels, data, color, yfmt, tipLabel) {
 
 // Horizontal bars for small-cardinality categorical breakdowns (models, modes).
 function drawHBars(id, labels, data, yfmt, tipLabel) {
-  const cfg = hcBase({ tooltip: { label: tipLabel } });
+  const cfg = anBase({ yfmt, tooltip: { label: tipLabel } }, true);
   cfg.type = 'bar';
-  cfg.options.indexAxis = 'y';
   cfg.options.plugins.legend.display = false;
-  cfg.options.scales.x.ticks.callback = yfmt;
-  cfg.options.scales.y.beginAtZero = false;
   cfg.data = {
     labels,
     datasets: [{
@@ -80,7 +98,7 @@ function drawHBars(id, labels, data, yfmt, tipLabel) {
 }
 
 function drawLines(id, labels, datasets, yfmt, tipLabel, showLegend) {
-  const cfg = hcBase({ yfmt, tooltip: { label: tipLabel } });
+  const cfg = anBase({ yfmt, tooltip: { label: tipLabel } });
   cfg.options.plugins.legend.display = showLegend !== false;
   cfg.data = { labels, datasets };
   upsertChart(id, cfg);

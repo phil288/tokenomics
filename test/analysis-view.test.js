@@ -123,3 +123,22 @@ test('analysis panels are free-draggable via the shared arrange mode (layout.js)
   // arrange mode suppresses table sorting during a drag
   assert.match(ANALYSIS_JS, /isArranging\(\)/);
 });
+
+test('analysis charts use a category x axis, not the Trends linear timestamp axis', () => {
+  // hcBase() (charts.js) has a linear timestamp x axis for the Trends charts.
+  // Analysis charts plot category labels; feeding those to a linear axis drops
+  // every point and renders every tick as epoch 0 ("01:00 AM").
+  const CHARTS_JS = fs.readFileSync(path.join(ROOT, 'src', 'web', 'charts.js'), 'utf8');
+  assert.match(CHARTS_JS, /x:\s*\{\s*type:\s*'linear'/, 'premise: hcBase x axis is linear');
+  const code = ANALYSIS_JS.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const calls = code.match(/hcBase\(/g) || [];
+  assert.equal(calls.length, 1, 'hcBase must only be called inside anBase()');
+  assert.match(ANALYSIS_JS, /function anBase\([^)]*\)\s*\{\s*const cfg = hcBase\(/);
+  assert.match(ANALYSIS_JS, /type:\s*'category'/);
+  for (const fn of ['drawBars', 'drawHBars', 'drawLines']) {
+    const body = ANALYSIS_JS.slice(ANALYSIS_JS.indexOf(`function ${fn}(`)).split('\n}\n')[0];
+    assert.match(body, /anBase\(/, `${fn} must build from anBase()`);
+  }
+  // tooltips title with the category label, not formatHistoryTime(parsed.x)
+  assert.match(ANALYSIS_JS, /callbacks\.title = items => items\.length \? items\[0\]\.label/);
+});

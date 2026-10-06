@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { settings } = require('./settings');
 const { accumulateWindowTelemetry } = require('./headroom-telemetry');
@@ -193,9 +194,25 @@ function headroomSessionStatsPath(home = HOME) {
     || path.join(home, '.headroom', 'session_stats.jsonl');
 }
 
+// Newer Headroom builds log to a port-suffixed file (`logs/proxy-8787.log`)
+// and leave the old `logs/proxy.log` frozen, so a fixed `proxy.log` default
+// silently tails a stale file. Pick the most recently written live log among
+// `proxy.log` / `proxy-<port>.log` (rotated `.N` copies never match).
+const PROXY_LOG_RE = /^proxy(?:-\d+)?\.log$/;
 function headroomProxyLogPath(home = HOME) {
-  return settings.HEADROOM_PROXY_LOG_PATH || process.env.HEADROOM_PROXY_LOG_PATH
-    || path.join(home, '.headroom', 'logs', 'proxy.log');
+  const override = settings.HEADROOM_PROXY_LOG_PATH || process.env.HEADROOM_PROXY_LOG_PATH;
+  if (override) return override;
+  const dir = path.join(home, '.headroom', 'logs');
+  let best = null;
+  let bestMtime = -Infinity;
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      if (!PROXY_LOG_RE.test(name)) continue;
+      const mtime = fs.statSync(path.join(dir, name)).mtimeMs;
+      if (mtime > bestMtime) { best = name; bestMtime = mtime; }
+    }
+  } catch { /* missing dir / unreadable entry → default path */ }
+  return path.join(dir, best || 'proxy.log');
 }
 
 function matchNum(s, re) { const m = re.exec(s); return m ? Number(m[1]) : null; }
