@@ -16,3 +16,4 @@ decided *and rejected*, evidence, and what was deliberately left undone.
 | 2026-09-29 | [RTK card showing 0 tokens saved (snap dupes + pruned ledger)](2026-09-29-rtk-snap-revision-dedupe.md) | done |
 | 2026-09-29 | [Pricing refresh — latest models](2026-09-29-pricing-refresh-latest-models.md) | done |
 | 2026-09-29 | [Pricing tab — friendlier editor](2026-09-29-pricing-tab-ux.md) | done |
+| 2026-10-06 | [SEO — landing page, README, package metadata](2026-10-06-seo-landing-page.md) | done |

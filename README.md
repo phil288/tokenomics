@@ -1,14 +1,24 @@
-# Tokenomics
+# Tokenomics — Claude Code, Cursor & AI Token Usage Dashboard
 
-**See exactly how many tokens — and how much money — your AI tooling saves you. In real time.**
+[![CI](https://github.com/phil288/tokenomics/actions/workflows/ci.yml/badge.svg)](https://github.com/phil288/tokenomics/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/phil288/tokenomics)](https://github.com/phil288/tokenomics/releases)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Node.js >= 18](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](package.json)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](package.json)
 
-Real-time browser dashboard for [RTK](https://github.com/rtk-ai/rtk), Caveman, and
-Headroom token-savings stats — live updates over SSE, time-series history graphs,
-per-model raw / real / saved **cost** tracking, and light / dark / auto themes.
+**See exactly how many tokens — and how much money — your AI coding tools save you. In real time.**
 
-Zero runtime dependencies (Node.js built-ins only). Charts via Chart.js CDN.
+Tokenomics is a free, open-source, **self-hosted dashboard for AI coding costs**. It tracks
+your **Claude Code quota** (5-hour session and weekly limits), **Cursor** and **Google
+Antigravity** usage, and the token savings of [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk),
+[Headroom](https://pypi.org/project/headroom-ai/) and Caveman — with live updates over SSE,
+time-series history, per-model raw / real / saved **USD cost** tracking (prompt-cache aware),
+quota pacing, and light / dark / auto themes.
 
-![Tokenomics dashboard](assets/dashboard.png)
+Zero runtime dependencies (Node.js built-ins only). Runs on localhost — your usage data never
+leaves your machine. **Website:** <https://phil288.github.io/tokenomics/>
+
+![Tokenomics dashboard showing Claude Code quota, RTK, Caveman and Headroom token savings, and cost trends](assets/dashboard.png)
 
 > *Above: 189.83M tokens saved across RTK · Caveman · Headroom cache — live cost
 > tracking, quota burn-down, and time-series trends, all on one screen.*
@@ -25,8 +35,9 @@ Zero runtime dependencies (Node.js built-ins only). Charts via Chart.js CDN.
   all trend graphs for tokens saved and cost over time.
 - 🪶 **Featherweight.** Zero runtime dependencies, single-file backend, instant
   frontend reloads. Runs anywhere Node ≥ 18 does.
-- 🎯 **Quota-aware.** Claude session + weekly quota burn-down (via Headroom) and
-  Cursor period usage, so you see limits before you hit them.
+- 🎯 **Quota-aware.** Claude Code session + weekly quota (from `claude /usage`),
+  Cursor billing-period usage and Antigravity quota, each with a pacing tick that
+  shows how much you may still use today — plus optional desktop alerts.
 
 > ⚠️ **Supported Models.** Tokenomics supports Claude models (Anthropic), Gemini / Antigravity models (Google), and Cursor models. The cost math uses model-specific pricing and cache ratios. Other LLM providers (OpenAI / Codex, etc.) are **not** yet supported. If you'd like to use another provider, contributions are very welcome — see [Contributing](#contributing).
 
@@ -223,12 +234,31 @@ Claude cache ratios (cache read ≈ 0.1× input, cache write ≈ 1.25×/2× inpu
 - **Real** — the actual bill, with cache discounts applied
 - **Saved** — `raw − real`, the money caching saved you
 
+## FAQ
+
+**How do I see my Claude Code usage and remaining quota?**
+Tokenomics polls Claude Code's own `/usage` command every 5 minutes and shows the
+5-hour session and weekly limits (including per-model weekly limits) as live bars,
+with a pacing tick for how much you can still use today.
+
+**How do I track how much prompt caching saves me?**
+Each model's tokens are priced twice — as if every cache token were billed at full
+input price (*raw*) and with real cache discounts (*real*). The difference is the
+money caching saved you.
+
+**Does Tokenomics send my data anywhere?**
+No. It reads local files and CLI output and serves on localhost. Outbound calls are
+limited to the optional Cursor usage API and update checks against GitHub / PyPI.
+
+**Does it work with OpenAI Codex or other providers?**
+Not yet — see [Contributing](#contributing).
+
 ## Contributing
 
 Contributions are welcome — especially **support for other LLM providers**.
-Tokenomics was developed and tested with Claude only; adding OpenAI / Codex,
-Gemini, or others mainly means extending the per-model pricing table and cache
-ratios (in `server.js` and `src/web/pricing.js`) and confirming the corresponding tool
+Claude, Gemini / Antigravity and Cursor models are priced today; adding OpenAI /
+Codex or others mainly means extending the per-model pricing table and cache
+ratios (in `src/settings.js` and `src/web/pricing.js`) and confirming the corresponding tool
 output is parsed correctly. Open an issue or PR.
 
 ## License

@@ -455,3 +455,14 @@ Opt-in browser notifications when a bar's usage reaches a share **of its pacing 
 - Config reaches the notifier via `applyPaceAlertSettings()` in `src/web/settings.js` — at boot (`initSettingsAndPricing`, so alerts work without opening the modal), on modal open, and after save (which also calls `resetPaceAlerts()` so a lowered threshold fires on the current unit instead of waiting for the next one).
 - Alerts fire from the dashboard tab, so the page must be open — the Alerts panel says so.
 - Tests: `test/notify.test.js` (thresholds, dedupe/re-arm, next-window re-fire, reload-does-not-replay, missing `localStorage`, permission degradation, wiring contract — loads the module with a stubbed `globalThis.Notification` + `globalThis.localStorage`), `test/settings.test.js` (clamping/persistence), `test/settings-tabs.test.js` (the `alerts` tab/panel pair — its `TABS` list must include every tab).
+
+## 9. Public Landing Page & SEO (`site/`)
+
+- `site/` is a **static, public** landing page deployed to GitHub Pages (`https://phil288.github.io/tokenomics/`) by `.github/workflows/pages.yml` (runs on `main` pushes touching `site/**`, or manually). It is **not** served by `server.js` and shares no code with the dashboard. Pages must be enabled once in repo Settings → Pages → Source: **GitHub Actions**.
+- Files: `index.html` (title/description/canonical, Open Graph + Twitter cards, `SoftwareApplication` + `FAQPage` JSON-LD), `robots.txt`, `sitemap.xml`, `llms.txt` (LLM-crawler summary), `og-image.png` (1200×630 social card), `dashboard.png` (copy of `assets/dashboard.png`).
+- **The FAQ JSON-LD must mirror the visible `<dt>` questions verbatim** — Google ignores/penalises structured data that isn't on the page. Edit both together.
+- Keep the meta description ≤ ~160 chars (search engines truncate); `test/seo.test.js` enforces bounds.
+- The running dashboard (`index.html` at repo root) is deliberately `noindex, nofollow`: it shows private usage data and must never be indexed if someone exposes it publicly. Don't "fix" that for SEO — public SEO lives in `site/`.
+- If the URL/owner changes, update the canonical/og URLs, `robots.txt`, `sitemap.xml`, `llms.txt`, `package.json` `homepage`, and the `SITE` constant in `test/seo.test.js` together.
+- Regenerate `og-image.png` with headless Chrome from a 1200×630 HTML mock (see `docs/tasks/2026-10-06-seo-landing-page.md`).
+- Tests: `test/seo.test.js`.

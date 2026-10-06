@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tokenomics — Claude Code, Cursor &amp; AI Token Usage Dashboard (Open Source)</title>
+  <meta name="description" content="Free, self-hosted dashboard for AI coding costs: Claude Code quota, Cursor and Antigravity usage, and tokens and dollars saved by RTK, Headroom and Caveman.">
+  <meta name="keywords" content="Claude Code usage, Claude quota tracker, token usage dashboard, LLM cost tracking, AI coding cost, Cursor usage, Antigravity quota, RTK, Rust Token Killer, Headroom, Caveman, prompt caching savings, open source, self-hosted">
+  <meta name="author" content="Philippe S">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#0f1117">
+  <link rel="canonical" href="https://phil288.github.io/tokenomics/">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪙</text></svg>">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Tokenomics">
+  <meta property="og:title" content="Tokenomics — see how many tokens and dollars your AI tooling saves">
+  <meta property="og:description" content="Real-time, self-hosted dashboard for Claude Code quota, Cursor and Antigravity usage, and RTK / Headroom / Caveman token savings. Open source, zero dependencies.">
+  <meta property="og:url" content="https://phil288.github.io/tokenomics/">
+  <meta property="og:image" content="https://phil288.github.io/tokenomics/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Tokenomics dashboard showing tokens saved, cost tracking and quota bars">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tokenomics — AI token usage &amp; savings dashboard">
+  <meta name="twitter:description" content="Track Claude Code quota, Cursor usage and the tokens and dollars saved by RTK, Headroom and Caveman. Open source, self-hosted.">
+  <meta name="twitter:image" content="https://phil288.github.io/tokenomics/og-image.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Tokenomics",
+    "description": "Free, self-hosted real-time dashboard that tracks Claude Code quota, Cursor and Antigravity usage, and the tokens and money saved by RTK, Headroom and Caveman.",
+    "url": "https://phil288.github.io/tokenomics/",
+    "downloadUrl": "https://github.com/phil288/tokenomics/releases",
+    "codeRepository": "https://github.com/phil288/tokenomics",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS",
+    "license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "softwareRequirements": "Node.js >= 18",
+    "screenshot": "https://phil288.github.io/tokenomics/dashboard.png",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": { "@type": "Person", "name": "Philippe S", "url": "https://github.com/phil288" }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "How do I see my Claude Code usage and quota?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Tokenomics polls Claude Code's own /usage command and shows your 5-hour session and weekly limits as live bars, with a pacing tick that tells you how much you can still use today." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does Tokenomics send my data anywhere?",
+        "acceptedAnswer": { "@type": "Answer", "text": "No. It runs on localhost and reads local files and CLI output. The only outbound calls are the optional Cursor usage API, and update checks against GitHub and PyPI." }
+      },
+      {
+        "@type": "Question",
+        "name": "Which AI tools and models are supported?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Claude Code, Cursor and Google Antigravity for usage and quota; RTK (Rust Token Killer), Headroom and Caveman for token savings. Cost math covers Anthropic Claude, Google Gemini and Cursor models. OpenAI / Codex is not supported yet." }
+      },
+      {
+        "@type": "Question",
+        "name": "Is Tokenomics free?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. It is open source under the Apache-2.0 license and has zero runtime dependencies beyond Node.js 18 or newer." }
+      }
+    ]
+  }
+  </script>
+  <style>
+    :root { --bg:#ffffff; --fg:#14161c; --muted:#5b6170; --card:#f4f5f8; --border:#e2e4ea; --accent:#6d5df6; --accent-fg:#ffffff; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#0f1117; --fg:#e8eaf0; --muted:#9aa0ae; --card:#171a22; --border:#262a35; --accent:#8b7dff; --accent-fg:#0f1117; } }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+    main, header, footer { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+    header { padding-top: 56px; text-align: center; }
+    h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.15; margin: 0 0 16px; }
+    .lead { font-size: 1.2rem; color: var(--muted); max-width: 720px; margin: 0 auto 28px; }
+    .cta { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+    .btn { display:inline-block; padding:12px 22px; border-radius:10px; text-decoration:none; font-weight:600; border:1px solid var(--border); color:var(--fg); }
+    .btn.primary { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+    figure { margin: 40px 0; }
+    figure img { width:100%; height:auto; border-radius:12px; border:1px solid var(--border); }
+    figcaption { color:var(--muted); font-size:.9rem; text-align:center; margin-top:8px; }
+    h2 { font-size: 1.6rem; margin: 48px 0 16px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px; }
+    .grid article { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; }
+    .grid h3 { margin:0 0 6px; font-size:1.05rem; }
+    .grid p { margin:0; color:var(--muted); }
+    pre { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px; overflow-x:auto; font-size:.9rem; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    dt { font-weight:600; margin-top:16px; }
+    dd { margin:4px 0 0; color:var(--muted); }
+    footer { padding: 48px 16px; color:var(--muted); font-size:.9rem; text-align:center; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Tokenomics: see how many tokens — and dollars — your AI coding tools save you</h1>
+    <p class="lead">A free, open-source, self-hosted dashboard for <strong>Claude Code</strong> quota, <strong>Cursor</strong> and <strong>Antigravity</strong> usage, and the token savings of <strong>RTK</strong>, <strong>Headroom</strong> and <strong>Caveman</strong>. Live, on one screen, with real cost math.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/phil288/tokenomics">View on GitHub</a>
+      <a class="btn" href="#install">Install in one line</a>
+    </div>
+  </header>
+
+  <main>
+    <figure>
+      <img src="dashboard.png" width="2517" height="1266" alt="Tokenomics dashboard: Claude Code, Cursor and Antigravity quota bars, RTK, Caveman and Headroom token savings, and cost trend charts">
+      <figcaption>Claude, Cursor and Antigravity quotas, token savings and cost trends — updated live.</figcaption>
+    </figure>
+
+    <h2>Features</h2>
+    <div class="grid">
+      <article><h3>Claude Code quota tracker</h3><p>5-hour session and weekly limits from Claude Code's own <code>/usage</code>, with a pacing tick showing how much you can still spend today.</p></article>
+      <article><h3>Cursor &amp; Antigravity usage</h3><p>Cursor billing-period usage and Google Antigravity quota on the same board as Claude.</p></article>
+      <article><h3>Token savings, in dollars</h3><p>RTK, Headroom and Caveman savings merged, with per-model raw → real → saved USD including prompt-cache pricing.</p></article>
+      <article><h3>Live over SSE</h3><p>Numbers update as you work. Time-series history for tokens saved, cost and quota burn.</p></article>
+      <article><h3>Pacing alerts</h3><p>Optional desktop notifications when a quota burns through its daily or hourly budget.</p></article>
+      <article><h3>Private &amp; dependency-free</h3><p>Runs on localhost with Node.js built-ins only. Your usage data stays on your machine.</p></article>
+    </div>
+
+    <h2 id="install">Install</h2>
+    <p>Linux (systemd user service, serves on <code>http://localhost:3000</code>):</p>
+    <pre><code>curl -fsSL https://raw.githubusercontent.com/phil288/tokenomics/main/install.sh | sh</code></pre>
+    <p>Or run it anywhere Node.js 18+ runs:</p>
+    <pre><code>git clone https://github.com/phil288/tokenomics.git
+cd tokenomics
+node server.js</code></pre>
+    <p>macOS machine-wide (launchd) install and all configuration options are in the <a href="https://github.com/phil288/tokenomics#readme">README</a>.</p>
+
+    <h2>FAQ</h2>
+    <dl>
+      <dt>How do I see my Claude Code usage and quota?</dt>
+      <dd>Tokenomics polls Claude Code's own <code>/usage</code> command and shows your 5-hour session and weekly limits as live bars, with a pacing tick that tells you how much you can still use today.</dd>
+      <dt>Does Tokenomics send my data anywhere?</dt>
+      <dd>No. It runs on localhost and reads local files and CLI output. The only outbound calls are the optional Cursor usage API, and update checks against GitHub and PyPI.</dd>
+      <dt>Which AI tools and models are supported?</dt>
+      <dd>Claude Code, Cursor and Google Antigravity for usage and quota; RTK (Rust Token Killer), Headroom and Caveman for token savings. Cost math covers Anthropic Claude, Google Gemini and Cursor models. OpenAI / Codex is not supported yet — contributions welcome.</dd>
+      <dt>Is Tokenomics free?</dt>
+      <dd>Yes. It is open source under the Apache-2.0 license and has zero runtime dependencies beyond Node.js 18 or newer.</dd>
+    </dl>
+  </main>
+
+  <footer>
+    <p><a href="https://github.com/phil288/tokenomics">GitHub</a> · <a href="https://github.com/phil288/tokenomics/releases">Releases</a> · <a href="https://github.com/phil288/tokenomics/issues">Issues</a> · Apache-2.0</p>
+  </footer>
+</body>
+</html>
