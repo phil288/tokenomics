@@ -18,3 +18,4 @@ decided *and rejected*, evidence, and what was deliberately left undone.
 | 2026-09-29 | [Pricing tab — friendlier editor](2026-09-29-pricing-tab-ux.md) | done |
 | 2026-10-06 | [Analysis tab empty (category axis + stale proxy log)](2026-10-06-analysis-tab-empty-charts.md) | done |
 | 2026-10-06 | [SEO — landing page, README, package metadata](2026-10-06-seo-landing-page.md) | done |
+| 2026-10-27 | [Pace note — elapsed days instead of day index](2026-10-27-pace-note-elapsed-days.md) | done |

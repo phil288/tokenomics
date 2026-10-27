@@ -46,6 +46,9 @@ export function computePace({ usedPct, windowSecs, remainingSecs }) {
     // straight-line extrapolation of the current burn rate to the window end
     projectedPct: elapsedFrac > 0 ? used / elapsedFrac : null,
     elapsedFrac,
+    // time elapsed in units (5.73 days) — what the note shows; `index` is the
+    // 1-based unit in progress (day 6) and only drives the budget
+    elapsedUnits: elapsed / u.unit,
   };
 }
 
@@ -172,7 +175,9 @@ export function paceNote(p) {
     : `${pn(p.spare)}% still available`;
   const proj = p.projectedPct == null ? '' :
     ` · at this rate ${pn(Math.min(999, p.projectedPct))}% by reset`;
-  return `<div class="pace-note ${p.over ? 'over' : 'ok'}" title="${rate(p.perUnitPct)}% per ${p.label} × ${p.index} ${p.label}${p.index === 1 ? '' : 's'} = ${pn(p.budgetPct)}% budget${proj}">`
-    + `${p.label} ${p.index}/${p.count} · ${rate(p.perUnitPct)}%/${p.label} · budget ${pn(p.budgetPct)}% · <b>${verdict}</b>`
+  // floored, not rounded: 5.97 days must not read "6.0" while still in day 6
+  const elapsed = (Math.floor(p.elapsedUnits * 10) / 10).toFixed(1);
+  return `<div class="pace-note ${p.over ? 'over' : 'ok'}" title="${p.label} ${p.index} of ${p.count} · ${rate(p.perUnitPct)}% per ${p.label} × ${p.index} ${p.label}${p.index === 1 ? '' : 's'} = ${pn(p.budgetPct)}% budget${proj}">`
+    + `${elapsed}/${p.count} ${p.label}s elapsed · ${rate(p.perUnitPct)}%/${p.label} · budget ${pn(p.budgetPct)}% · <b>${verdict}</b>`
     + `</div>`;
 }

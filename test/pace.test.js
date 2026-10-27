@@ -168,7 +168,10 @@ test('paceNote states the per-unit rate, the budget and the slack left', () => {
   const under = computePace({ usedPct: 17, windowSecs: 7 * DAY, remainingSecs: 4 * DAY + 11 * HOUR });
   const html = paceNote(under);
   assert.match(html, /class="pace-note ok"/);
-  assert.match(html, /day 3\/7/);
+  // 2d 13h elapsed → shown as elapsed time, not the 1-based day index
+  assert.match(html, />2\.5\/7 days elapsed ·/);
+  assert.doesNotMatch(html, />day 3\/7/);
+  assert.match(html, /title="day 3 of 7 ·/);
   assert.match(html, /14\.3%\/day/);
   assert.match(html, /budget 43%/);
   assert.match(html, /26% still available/);
@@ -176,6 +179,19 @@ test('paceNote states the per-unit rate, the budget and the slack left', () => {
   assert.match(over, /class="pace-note over"/);
   assert.match(over, /17% over budget/);
   assert.equal(paceNote(null), '');
+});
+
+test('paceNote floors elapsed time so it never reads as the next unit', () => {
+  // 5d 23h 50m elapsed: still day 6, must not round up to "6.0"
+  const p = computePace({ usedPct: 50, windowSecs: 7 * DAY, remainingSecs: DAY + 10 * 60 });
+  assert.equal(p.index, 6);
+  assert.match(paceNote(p), />5\.9\/7 days elapsed/);
+  // the 5h session counts hours
+  const s = computePace({ usedPct: 10, windowSecs: 5 * HOUR, remainingSecs: 3 * HOUR + 48 * 60 });
+  assert.match(paceNote(s), />1\.2\/5 hours elapsed/);
+  // window just started
+  const z = computePace({ usedPct: 0, windowSecs: 7 * DAY, remainingSecs: 7 * DAY });
+  assert.match(paceNote(z), />0\.0\/7 days elapsed/);
 });
 
 // ---- DOM/CSS contract (no jsdom — zero-dependency rule) ----
